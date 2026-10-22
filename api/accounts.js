@@ -21,8 +21,15 @@ module.exports = async (req, res) => {
   try {
     supabase = createClient(MASTER_URL, MASTER_KEY);
   } catch (initErr) {
-    return res.status(500).json({ error: 'Supabase initialization failed: ' + initErr.message });
+    return res.status(500).json({ error: 'Supabase client initialization failed: ' + initErr.message });
   }
+
+  // Parse body safely whether parsed by Vercel or raw string
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) { body = {}; }
+  }
+  body = body || {};
 
   // GET: Fetch all accounts
   if (req.method === 'GET') {
@@ -33,7 +40,7 @@ module.exports = async (req, res) => {
         .order('name', { ascending: true });
 
       if (error) {
-        return res.status(500).json({ error: error.message, details: error });
+        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
       }
       return res.status(200).json(data || []);
     } catch (err) {
@@ -44,28 +51,41 @@ module.exports = async (req, res) => {
   // POST: Add new account
   if (req.method === 'POST') {
     try {
-      const { name, project_url, api_key, db_password } = req.body || {};
+      const { name, project_url, api_key, db_password } = body;
       if (!name || !project_url || !api_key) {
-        return res.status(400).json({ error: 'Missing required fields: name, project_url, and api_key are required.' });
+        return res.status(400).json({ 
+          error: 'Missing required fields: project name, project url, and api key are required.',
+          received: { name: !!name, project_url: !!project_url, api_key: !!api_key }
+        });
       }
 
-      // Clean project_url (strip trailing slashes)
-      const cleanUrl = project_url.trim().replace(/\/+$/, '');
+      // Clean project_url (strip trailing slashes, clean protocol)
+      let cleanUrl = project_url.trim().replace(/\/+$/, '');
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl;
+      }
+
+      const newRecord = { 
+        name: name.trim(), 
+        project_url: cleanUrl, 
+        api_key: api_key.trim(), 
+        db_password: (db_password || '').trim() 
+      };
 
       const { data, error } = await supabase
         .from('supabase_accounts')
-        .insert([{ 
-          name: name.trim(), 
-          project_url: cleanUrl, 
-          api_key: api_key.trim(), 
-          db_password: (db_password || '').trim() 
-        }])
+        .insert([newRecord])
         .select();
 
       if (error) {
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ 
+          error: error.message, 
+          code: error.code, 
+          details: error.details, 
+          hint: error.hint || 'Check if table supabase_accounts has permissions granted to anon role.'
+        });
       }
-      return res.status(201).json({ success: true, data: data?.[0] || data });
+      return res.status(201).json({ success: true, data: data?.[0] || newRecord });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -74,7 +94,7 @@ module.exports = async (req, res) => {
   // DELETE: Delete account by id
   if (req.method === 'DELETE') {
     try {
-      const id = req.query.id || (req.body && req.body.id);
+      const id = req.query.id || body.id;
       if (!id) {
         return res.status(400).json({ error: 'Account id is required for deletion' });
       }
@@ -85,7 +105,7 @@ module.exports = async (req, res) => {
         .eq('id', id);
 
       if (error) {
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message, details: error });
       }
       return res.status(200).json({ success: true, message: 'Account deleted successfully' });
     } catch (err) {
