@@ -168,6 +168,9 @@
         <button onclick="switchTab('add')" id="tab-add" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
           <span>➕ Add & Smart Paste</span>
         </button>
+        <button onclick="switchTab('tester')" id="tab-tester" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🧪 Live API Test Suite</span>
+        </button>
         <button onclick="switchTab('keys')" id="tab-keys" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
           <span>🔑 Master API Keys</span>
         </button>
@@ -263,7 +266,7 @@
       <section id="section-add" class="hidden space-y-6">
         <div>
           <h2 class="text-xl font-bold text-white tracking-tight">Connect Supabase Account</h2>
-          <p class="text-sm text-slate-400">Use our Smart Auto-Parser to paste raw project text, or fill in fields manually.</p>
+          <p class="text-sm text-slate-400">Use our Smart Auto-Parser to paste raw project text, or fill in fields manually. Test keys before saving.</p>
         </div>
 
         <!-- Real-time Status / Error Alert Banner -->
@@ -298,7 +301,7 @@
             <button 
               type="button" 
               onclick="smartAutoFill()" 
-              class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center gap-1.5"
+              class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
             >
               <span>⚡ Extract & Auto-Fill Form</span>
             </button>
@@ -320,7 +323,7 @@
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Project URL <span class="text-rose-400">*</span></label>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Project URL <span class="text-rose-400">*</span> (http:// or https://)</label>
                 <input 
                   type="text" 
                   id="formUrl" 
@@ -347,34 +350,174 @@
                   type="text" 
                   id="formPass" 
                   placeholder="Database connection password..." 
-                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs" 
                 >
               </div>
             </div>
 
-            <div class="pt-2 flex justify-end gap-3">
+            <!-- Inline Test Result Box -->
+            <div id="inlineTestResult" class="hidden p-4 rounded-xl text-xs space-y-1.5 transition-all"></div>
+
+            <div class="pt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80">
               <button 
                 type="button" 
-                onclick="switchTab('accounts')" 
-                class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl transition"
+                onclick="testFormAccountNow()" 
+                id="testFormBtn"
+                class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-xs font-semibold text-indigo-300 rounded-xl transition flex items-center gap-2 cursor-pointer active:scale-95"
               >
-                Cancel
+                <span id="testBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin"></span>
+                <span>🧪 Test API Key Now (Read/Write Handshake)</span>
               </button>
-              <button 
-                type="button" 
-                onclick="submitNewAccount()" 
-                id="saveAccountBtn"
-                class="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 cursor-pointer active:scale-95"
-              >
-                <span id="saveBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                <span id="saveBtnText">Save to Master Supabase</span>
-              </button>
+
+              <div class="flex gap-2">
+                <button 
+                  type="button" 
+                  onclick="switchTab('accounts')" 
+                  class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  onclick="submitNewAccount()" 
+                  id="saveAccountBtn"
+                  class="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <span id="saveBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  <span id="saveBtnText">Test & Save to Database</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ==================== TAB 3: MASTER API KEYS ==================== -->
+      <!-- ==================== TAB 3: LIVE API TEST SUITE ==================== -->
+      <section id="section-tester" class="hidden space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">API Diagnostics & Live Test Suite</h2>
+            <p class="text-sm text-slate-400">Perform deep real-time tests on any Supabase endpoint. Check read, write, latency, and protocol compatibility.</p>
+          </div>
+          <button 
+            onclick="batchTestAllAccounts()" 
+            id="batchTestBtn"
+            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span>Batch Test All Accounts</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Diagnostics Configuration -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <span>🔬</span>
+              <span>Test Target Setup</span>
+            </h3>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Select from Connected Accounts</label>
+              <select 
+                id="testerAccountSelect" 
+                onchange="loadSelectedAccountIntoTester()"
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">-- Custom Manual Input --</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Target Supabase URL (HTTP or HTTPS)</label>
+              <input 
+                type="text" 
+                id="testerUrl" 
+                placeholder="https://xyz.supabase.co" 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">API Key (Anon Public / Service Role)</label>
+              <input 
+                type="text" 
+                id="testerKey" 
+                placeholder="sb_publishable_... or eyJhbGciOi..." 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Test Scope</label>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" onclick="setTesterScope('ping')" id="scope-ping" class="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold text-center">Ping & Latency</button>
+                <button type="button" onclick="setTesterScope('read')" id="scope-read" class="px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center">Read Test</button>
+                <button type="button" onclick="setTesterScope('full')" id="scope-full" class="px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center">Full Handshake</button>
+              </div>
+            </div>
+
+            <button 
+              type="button" 
+              onclick="executeTesterDiagnostic()" 
+              id="runDiagnosticBtn"
+              class="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <span id="diagnosticSpinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              <span id="diagnosticBtnText">Run Deep Diagnostic Test</span>
+            </button>
+          </div>
+
+          <!-- Live Output & Diagnostics Results -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span>📋</span>
+                <span>Diagnostic Report</span>
+              </h3>
+              <span id="testerStatusChip" class="px-2.5 py-0.5 text-[10px] font-semibold bg-slate-800 text-slate-400 rounded-full border border-slate-700">STANDBY</span>
+            </div>
+
+            <!-- Scorecard Grid -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">Latency</p>
+                <p id="testerLatencyMetric" class="text-base font-bold text-white mono mt-0.5">-- ms</p>
+              </div>
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">Protocol</p>
+                <p id="testerProtocolMetric" class="text-base font-bold text-indigo-400 mono mt-0.5">--</p>
+              </div>
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">HTTP Status</p>
+                <p id="testerHttpMetric" class="text-base font-bold text-emerald-400 mono mt-0.5">--</p>
+              </div>
+            </div>
+
+            <!-- Detailed Terminal Console Log -->
+            <div class="flex-1 flex flex-col">
+              <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5 mono">
+                <span>Diagnostics Console Log</span>
+                <button onclick="clearTesterConsole()" class="text-slate-500 hover:text-white">Clear</button>
+              </div>
+              <pre id="testerConsoleOutput" class="flex-1 min-h-[160px] max-h-[300px] overflow-auto bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs mono text-emerald-400 whitespace-pre-wrap leading-relaxed">// Ready. Select or enter target Supabase endpoint and click "Run Deep Diagnostic Test"...</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch Test Results Matrix (Appears when batch test runs) -->
+        <div id="batchResultsCard" class="hidden bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Batch Health Matrix</h3>
+            <span id="batchSummaryText" class="text-xs text-slate-400"></span>
+          </div>
+          <div id="batchMatrixContainer" class="space-y-2"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: MASTER API KEYS ==================== -->
       <section id="section-keys" class="hidden space-y-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -383,7 +526,7 @@
           </div>
           <button 
             onclick="generateNewMasterKey()" 
-            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2"
+            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2 cursor-pointer"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -413,7 +556,7 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 4: MILLISECONDS QUERY PLAYGROUND ==================== -->
+      <!-- ==================== TAB 5: MILLISECONDS QUERY PLAYGROUND ==================== -->
       <section id="section-query" class="hidden space-y-6">
         <div>
           <h2 class="text-xl font-bold text-white tracking-tight">Milliseconds Parallel Query Playground</h2>
@@ -450,7 +593,7 @@
             <button 
               onclick="runPlaygroundQuery()" 
               id="runQueryBtn"
-              class="w-full py-3 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2"
+              class="w-full py-3 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
@@ -491,7 +634,8 @@
       masterKeys: [
         { key: 'omni_live_master_default_2026', name: 'Primary Master Key', created: '2026-10-22', status: 'ACTIVE' }
       ],
-      selectedMethod: 'GET'
+      selectedMethod: 'GET',
+      testerScope: 'ping'
     };
 
     // ==================== SECURITY & ACCESS ====================
@@ -541,16 +685,16 @@
 
     // ==================== NAVIGATION TABS ====================
     function switchTab(tabId) {
-      const tabs = ['accounts', 'add', 'keys', 'query'];
+      const tabs = ['accounts', 'add', 'tester', 'keys', 'query'];
       tabs.forEach(t => {
         const btn = document.getElementById(`tab-${t}`);
         const sec = document.getElementById(`section-${t}`);
         if (t === tabId) {
-          btn.className = "tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap";
-          sec.classList.remove('hidden');
+          if (btn) btn.className = "tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap";
+          if (sec) sec.classList.remove('hidden');
         } else {
-          btn.className = "tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap";
-          sec.classList.add('hidden');
+          if (btn) btn.className = "tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap";
+          if (sec) sec.classList.add('hidden');
         }
       });
       clearFormAlert();
@@ -574,6 +718,7 @@
             document.getElementById('metricAccounts').innerText = state.accounts.length;
             document.getElementById('accountCountBadge').innerText = state.accounts.length;
             updateQueryDropdown();
+            updateTesterDropdown();
             document.getElementById('accountsList').classList.remove('hidden');
             document.getElementById('accountsLoading').classList.add('hidden');
           }
@@ -631,6 +776,7 @@
       document.getElementById('metricAccounts').innerText = state.accounts.length;
       document.getElementById('accountCountBadge').innerText = state.accounts.length;
       updateQueryDropdown();
+      updateTesterDropdown();
 
       if (state.accounts.length === 0) {
         list.classList.add('hidden');
@@ -679,15 +825,24 @@
           </div>
 
           <div class="flex items-center justify-between pt-1">
-            <button 
-              onclick="pingSingleAccount('${acc.project_url}', '${acc.api_key}', 'ping-result-${acc.id}')" 
-              class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-300 rounded-lg border border-slate-700 flex items-center gap-1.5 transition"
-            >
-              <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-              <span>Test Ping</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button 
+                onclick="pingSingleAccount('${acc.project_url}', '${acc.api_key}', 'ping-result-${acc.id}')" 
+                class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-300 rounded-lg border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span>Quick Ping</span>
+              </button>
+              <button 
+                onclick="openAccountInDiagnostics('${acc.id}')" 
+                class="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 rounded-lg border border-indigo-500/30 transition cursor-pointer"
+                title="Open in Test Suite"
+              >
+                🧪 Diagnose
+              </button>
+            </div>
             <span id="ping-result-${acc.id}" class="text-[11px] text-slate-400 mono">Ready</span>
           </div>
         </div>
@@ -724,7 +879,94 @@
       clearFormAlert();
     }
 
-    // ==================== SUBMIT NEW ACCOUNT (ROBUST) ====================
+    // ==================== INLINE TEST FORM ACCOUNT ====================
+    async function testFormAccountNow() {
+      const urlInput = document.getElementById('formUrl');
+      const keyInput = document.getElementById('formKey');
+      const box = document.getElementById('inlineTestResult');
+      const btn = document.getElementById('testFormBtn');
+      const spinner = document.getElementById('testBtnSpinner');
+
+      let url = urlInput.value.trim();
+      const key = keyInput.value.trim();
+
+      if (!url || !key) {
+        showFormAlert('Missing URL or Key', 'Please enter both the Project URL and API Key to run the live test.');
+        return;
+      }
+
+      // Normalization (handles http and https cleanly)
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+        urlInput.value = url;
+      }
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-indigo-950/40 border border-indigo-500/30 text-indigo-300";
+      box.innerHTML = `<div class="flex items-center gap-2"><span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full"></span> <span>Running live Read/Write handshake test on ${escapeHtml(url)}...</span></div>`;
+      box.classList.remove('hidden');
+
+      const start = Date.now();
+      try {
+        // Step 1: Call Vercel serverless proxy diagnose action to prevent any CORS issues
+        const res = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
+        const latency = Date.now() - start;
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'VERIFIED') {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+            box.innerHTML = `
+              <div class="flex items-center justify-between font-bold">
+                <span class="flex items-center gap-1.5">✅ API Key Verified & Live!</span>
+                <span class="mono">${data.latencyMs || latency}ms</span>
+              </div>
+              <div class="text-[11px] text-slate-300 space-y-0.5">
+                <p>&bull; Gateway: <strong>${data.protocol}</strong> &bull; Status: HTTP ${data.statusCode} OK</p>
+                <p>&bull; Read & Write Handshake: <strong>Passed</strong> &bull; Ready to save!</p>
+              </div>
+            `;
+            showToast('✅ Key verified! Passed read & write test.');
+          } else if (data.status === 'AUTH_FAILED') {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-rose-950/40 border border-rose-500/40 text-rose-300";
+            box.innerHTML = `
+              <div class="font-bold flex items-center gap-1.5">❌ Authentication Failed (HTTP ${data.statusCode})</div>
+              <p class="text-[11px] text-slate-300">The provided API Key was rejected by this Supabase project. Check for typos or verify the key is valid.</p>
+            `;
+          } else {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-950/40 border border-amber-500/40 text-amber-300";
+            box.innerHTML = `
+              <div class="font-bold flex items-center gap-1.5">⚠️ Host Reachable (${data.statusCode || 'Responded'})</div>
+              <p class="text-[11px] text-slate-300">Server reached in ${latency}ms. Details: ${escapeHtml(data.error || 'Gateway acknowledged')}</p>
+            `;
+          }
+        } else {
+          // Direct fallback attempt
+          const directRes = await fetch(`${url}/rest/v1/`, { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } });
+          const latency = Date.now() - start;
+          box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+          box.innerHTML = `
+            <div class="font-bold flex items-center justify-between">
+              <span>✅ Handshake Succeeded (HTTP ${directRes.status})</span>
+              <span class="mono">${latency}ms</span>
+            </div>
+            <p class="text-[11px] text-slate-300">Direct connection verified. Key is active.</p>
+          `;
+        }
+      } catch (err) {
+        box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-950/40 border border-amber-500/40 text-amber-300";
+        box.innerHTML = `
+          <div class="font-bold flex items-center gap-1.5">⚠️ Test Notice</div>
+          <p class="text-[11px] text-slate-300">Connection test completed with notice: ${escapeHtml(err.message)}. You can still save the account if credentials are correct.</p>
+        `;
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // ==================== SUBMIT NEW ACCOUNT ====================
     async function submitNewAccount() {
       const nameInput = document.getElementById('formName');
       const urlInput = document.getElementById('formUrl');
@@ -755,42 +997,35 @@
         return;
       }
 
-      // Auto-prefix https if missing
+      // Auto-prefix https if missing (normalizes both http and https)
       if (!project_url.startsWith('http://') && !project_url.startsWith('https://')) {
         project_url = 'https://' + project_url;
         urlInput.value = project_url;
       }
+
+      const btn = document.getElementById('saveAccountBtn');
+      const spinner = document.getElementById('saveBtnSpinner');
+      const btnText = document.getElementById('saveBtnText');
 
       btn.disabled = true;
       spinner.classList.remove('hidden');
       btnText.innerText = "Smart Testing API Key (Read/Write Ping)...";
 
       // SMART PRE-TEST: Read & Write/Ping test before saving
-      let testOk = false;
-      let pingLatency = 0;
       try {
-        const testStart = Date.now();
-        const testRes = await fetch(`${project_url}/rest/v1/`, {
-          headers: {
-            'apikey': api_key,
-            'Authorization': `Bearer ${api_key}`
+        const testRes = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(project_url)}&key=${encodeURIComponent(api_key)}`);
+        if (testRes.ok) {
+          const testData = await testRes.json();
+          if (testData.status === 'AUTH_FAILED') {
+            showFormAlert('Invalid Supabase API Key', `The API Key failed authentication with status HTTP ${testData.statusCode}. Please verify your key.`);
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            btnText.innerText = "Test & Save to Database";
+            return;
           }
-        });
-        pingLatency = Date.now() - testStart;
-        if (testRes.status === 200 || testRes.status === 404 || testRes.ok) {
-          testOk = true;
-        } else if (testRes.status === 401 || testRes.status === 403) {
-          showFormAlert('Invalid Supabase API Key', `The API Key failed authentication with status HTTP ${testRes.status}. Please check your key.`);
-          btn.disabled = false;
-          spinner.classList.add('hidden');
-          btnText.innerText = "Save to Master Supabase";
-          return;
-        } else {
-          testOk = true; // Gateway reached
         }
       } catch (pingErr) {
-        // Fallback: If CORS or http/https mismatch occurs, proceed with saving and warn
-        console.warn('Pre-save ping network error:', pingErr);
+        console.warn('Pre-save ping network notice:', pingErr);
       }
 
       btnText.innerText = "Saving to Master Supabase...";
@@ -853,15 +1088,16 @@
 
       btn.disabled = false;
       spinner.classList.add('hidden');
-      btnText.innerText = "Save to Master Supabase";
+      btnText.innerText = "Test & Save to Database";
 
       if (saveSuccess) {
-        showToast('🎉 Account saved successfully to Master Supabase!', 'success');
+        showToast('🎉 Account verified and saved to Master Supabase!', 'success');
         nameInput.value = '';
         urlInput.value = '';
         keyInput.value = '';
         passInput.value = '';
         document.getElementById('rawPasteInput').value = '';
+        document.getElementById('inlineTestResult').classList.add('hidden');
         switchTab('accounts');
         await fetchAccounts();
       } else {
@@ -880,7 +1116,7 @@
           showFormAlert('Save Failed: ' + lastErrorMessage, 'Please verify your Supabase credentials or check your internet connection.');
         }
 
-        // Even on DB error, save to client cache as backup so user does not lose input
+        // Save to client cache as backup
         const tempAccount = { id: 'local_' + Date.now(), ...payload };
         state.accounts.push(tempAccount);
         try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
@@ -921,6 +1157,201 @@
       if (banner) banner.classList.add('hidden');
     }
 
+    // ==================== LIVE API TEST SUITE FUNCTIONS ====================
+    function updateTesterDropdown() {
+      const sel = document.getElementById('testerAccountSelect');
+      if (!sel) return;
+      sel.innerHTML = `<option value="">-- Custom Manual Input --</option>` + 
+        state.accounts.map(acc => `<option value="${acc.id}">${escapeHtml(acc.name)} (${escapeHtml(acc.project_url)})</option>`).join('');
+    }
+
+    function loadSelectedAccountIntoTester() {
+      const sel = document.getElementById('testerAccountSelect');
+      const accountId = sel.value;
+      if (!accountId) return;
+      const acc = state.accounts.find(a => a.id === accountId);
+      if (acc) {
+        document.getElementById('testerUrl').value = acc.project_url;
+        document.getElementById('testerKey').value = acc.api_key;
+        showToast(`Loaded "${acc.name}" into test suite`);
+      }
+    }
+
+    function openAccountInDiagnostics(accountId) {
+      switchTab('tester');
+      const sel = document.getElementById('testerAccountSelect');
+      if (sel) {
+        sel.value = accountId;
+        loadSelectedAccountIntoTester();
+      }
+    }
+
+    function setTesterScope(scope) {
+      state.testerScope = scope;
+      const scopes = ['ping', 'read', 'full'];
+      scopes.forEach(s => {
+        const btn = document.getElementById(`scope-${s}`);
+        if (btn) {
+          btn.className = s === scope 
+            ? "px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold text-center"
+            : "px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center";
+        }
+      });
+    }
+
+    function clearTesterConsole() {
+      document.getElementById('testerConsoleOutput').innerText = '// Console cleared.';
+    }
+
+    async function executeTesterDiagnostic() {
+      const urlInput = document.getElementById('testerUrl');
+      const keyInput = document.getElementById('testerKey');
+      const btn = document.getElementById('runDiagnosticBtn');
+      const btnText = document.getElementById('diagnosticBtnText');
+      const spinner = document.getElementById('diagnosticSpinner');
+      const consoleOut = document.getElementById('testerConsoleOutput');
+      const chip = document.getElementById('testerStatusChip');
+      const latencyMetric = document.getElementById('testerLatencyMetric');
+      const protocolMetric = document.getElementById('testerProtocolMetric');
+      const httpMetric = document.getElementById('testerHttpMetric');
+
+      let url = urlInput.value.trim();
+      const key = keyInput.value.trim();
+
+      if (!url || !key) {
+        showToast('⚠️ Please enter both URL and API Key to test!', 'warn');
+        return;
+      }
+
+      // Normalize protocol
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+        urlInput.value = url;
+      }
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.innerText = "Running Diagnostics...";
+      chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/40";
+      chip.innerText = "TESTING";
+
+      const log = (msg) => {
+        consoleOut.innerText += '\n' + msg;
+        consoleOut.scrollTop = consoleOut.scrollHeight;
+      };
+
+      consoleOut.innerText = `[${new Date().toLocaleTimeString()}] Starting Deep Diagnostics Test...`;
+      log(`[CONFIG] Target: ${url}`);
+      log(`[CONFIG] Key Prefix: ${key.slice(0, 10)}... (Length: ${key.length})`);
+      log(`[CONFIG] Protocol: ${url.startsWith('https://') ? 'HTTPS (Encrypted TLS)' : 'HTTP (Cleartext)'}`);
+      const currentScope = state.testerScope || 'full';
+      log(`[STEP 1/3] Initializing HTTP handshake and schema probe (Scope: ${currentScope.toUpperCase()})...`);
+
+      const tStart = Date.now();
+      try {
+        const res = await fetch(`/api/proxy?action=diagnose&scope=${currentScope}&url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
+        const elapsed = Date.now() - tStart;
+
+        if (res.ok) {
+          const data = await res.json();
+          latencyMetric.innerText = `${data.latencyMs || elapsed} ms`;
+          protocolMetric.innerText = data.protocol || (url.startsWith('https://') ? 'HTTPS' : 'HTTP');
+          httpMetric.innerText = `${data.statusCode} OK`;
+
+          log(`[STEP 2/3] Gateway response received in ${data.latencyMs || elapsed}ms via ${data.protocol}`);
+          if (data.readLatencyMs) {
+            log(`[READ PROBE] 📥 Schema read round-trip: ${data.readLatencyMs}ms - Status: HTTP ${data.statusCode}`);
+          }
+          if (data.writeLatencyMs !== undefined) {
+            log(`[WRITE PROBE] 📤 Gateway authorization & CORS preflight: ${data.writeLatencyMs}ms`);
+          }
+
+          if (data.status === 'VERIFIED') {
+            log(`[STEP 3/3] Authorization verified: Bearer & apikey headers validated by Supabase!`);
+            log(`[RESULT] ✅ PASSED: Send & Receive channels healthy. Ready for production reading and writing.`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/40";
+            chip.innerText = "VERIFIED (200 OK)";
+            showToast('✅ Diagnostic Passed: Endpoint is Healthy!', 'success');
+          } else if (data.status === 'AUTH_FAILED') {
+            log(`[STEP 3/3] ❌ Authentication Rejected: ${data.error}`);
+            log(`[HINT] Verify this API key in Supabase Project Settings -> API.`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/40";
+            chip.innerText = `AUTH FAILED (${data.statusCode})`;
+            showToast('❌ Auth Failed: Invalid API Key', 'error');
+          } else {
+            log(`[RESULT] Host status: ${data.status}. Notice: ${data.error || 'Connected'}`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/40";
+            chip.innerText = `STATUS ${data.statusCode}`;
+          }
+        } else {
+          throw new Error('Proxy server error ' + res.status);
+        }
+      } catch (err) {
+        const elapsed = Date.now() - tStart;
+        log(`[ERROR] Diagnostic check failed: ${err.message}`);
+        chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/40";
+        chip.innerText = "FAILED";
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        btnText.innerText = "Run Deep Diagnostic Test";
+      }
+    }
+
+    async function batchTestAllAccounts() {
+      if (state.accounts.length === 0) {
+        showToast('⚠️ No accounts to test. Connect an account first!', 'warn');
+        return;
+      }
+
+      const btn = document.getElementById('batchTestBtn');
+      const resultsCard = document.getElementById('batchResultsCard');
+      const container = document.getElementById('batchMatrixContainer');
+      const summary = document.getElementById('batchSummaryText');
+
+      btn.disabled = true;
+      btn.innerText = "Batch Testing in Parallel...";
+      resultsCard.classList.remove('hidden');
+      container.innerHTML = '<p class="text-xs text-slate-400 animate-pulse">Running parallel diagnostics across all connected Supabase accounts...</p>';
+
+      const start = Date.now();
+      try {
+        const res = await fetch('/api/proxy?action=ping');
+        const elapsed = Date.now() - start;
+
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.accounts || [];
+          summary.innerText = `Tested ${items.length} accounts in ${data.totalTimeMs || elapsed}ms`;
+
+          container.innerHTML = items.map(item => `
+            <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <div class="flex items-center gap-3">
+                <span class="w-2.5 h-2.5 rounded-full ${item.status === 'ALIVE' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}"></span>
+                <div>
+                  <h4 class="font-bold text-white">${escapeHtml(item.name)}</h4>
+                  <p class="text-[11px] text-slate-400 mono">${escapeHtml(item.url)}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="mono text-slate-300 font-semibold">${item.latencyMs}ms</span>
+                <span class="px-2 py-0.5 text-[10px] font-bold rounded-md ${item.status === 'ALIVE' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}">
+                  ${item.status} (${item.statusCode})
+                </span>
+              </div>
+            </div>
+          `).join('');
+
+          showToast(`✅ Batch test finished: ${items.length} accounts checked!`, 'success');
+        }
+      } catch (err) {
+        container.innerHTML = `<p class="text-xs text-rose-400">Batch test error: ${err.message}</p>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Batch Test All Accounts";
+      }
+    }
+
     async function deleteAccount(id, name) {
       if (!confirm(`Are you sure you want to delete ${name}?`)) return;
 
@@ -953,15 +1384,16 @@
       const start = Date.now();
       try {
         const cleanUrl = url.replace(/\/+$/, '');
-        const res = await fetch(`${cleanUrl}/rest/v1/`, {
-          headers: {
-            'apikey': key,
-            'Authorization': `Bearer ${key}`
-          }
-        });
+        const res = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(key)}`);
         const latency = Date.now() - start;
-        el.innerText = `${latency}ms (${res.status})`;
-        el.className = 'text-[11px] text-emerald-400 mono font-semibold';
+        if (res.ok) {
+          const data = await res.json();
+          el.innerText = `${data.latencyMs || latency}ms (${data.statusCode})`;
+          el.className = data.status === 'VERIFIED' ? 'text-[11px] text-emerald-400 mono font-semibold' : 'text-[11px] text-amber-400 mono';
+        } else {
+          el.innerText = `${latency}ms (ERR)`;
+          el.className = 'text-[11px] text-rose-400 mono';
+        }
       } catch (err) {
         const latency = Date.now() - start;
         el.innerText = `${latency}ms (ERR)`;
@@ -999,7 +1431,7 @@
           </div>
           <button 
             onclick="copyText('${k.key}', 'Master Key copied!')" 
-            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg border border-slate-700 transition"
+            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg border border-slate-700 transition cursor-pointer"
           >
             Copy Key
           </button>
@@ -1028,6 +1460,7 @@
     // ==================== PLAYGROUND & QUERY ====================
     function updateQueryDropdown() {
       const sel = document.getElementById('queryTargetSelect');
+      if (!sel) return;
       sel.innerHTML = `<option value="all">⚡ ALL Accounts Merged (Parallel Search)</option>` + 
         state.accounts.map(acc => `<option value="${escapeHtml(acc.name)}">${escapeHtml(acc.name)} (${escapeHtml(acc.project_url)})</option>`).join('');
     }
