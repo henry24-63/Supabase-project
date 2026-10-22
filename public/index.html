@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTT Router | Master Supabase Proxy & Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+    .animate-pulse-slow { animation: pulse-slow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+    .shake-anim { animation: shake 0.4s ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- ==================== SECURITY ACCESS GATEWAY ==================== -->
+  <div id="lockScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 transition-all duration-300">
+    <div id="lockCard" class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl shadow-indigo-950/50 relative overflow-hidden">
+      <!-- Glow effect -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="flex flex-col items-center text-center">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 mb-6">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+
+        <h2 class="text-2xl font-bold text-white tracking-tight">Security Verification</h2>
+        <p class="text-sm text-slate-400 mt-2 mb-6">Enter your Master Access Code to unlock the OTT Router & Supabase Management Dashboard.</p>
+
+        <form id="unlockForm" onsubmit="handleUnlock(event)" class="w-full space-y-4">
+          <div class="relative">
+            <input 
+              type="password" 
+              id="accessCodeInput" 
+              placeholder="Enter Access Code..." 
+              autocomplete="current-password"
+              class="w-full px-5 py-4 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mono text-center tracking-widest text-lg"
+              required
+            >
+            <button 
+              type="button" 
+              onclick="toggleCodeVisibility()" 
+              class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+            >
+              <svg id="eyeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div id="lockError" class="text-xs text-rose-400 hidden font-medium">
+            Incorrect Access Code. Please enter the master access code.
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold shadow-lg shadow-indigo-500/25 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <span>Unlock Dashboard</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN DASHBOARD ==================== -->
+  <div id="mainDashboard" class="hidden min-h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-bold text-white tracking-tight">OTT Router</h1>
+              <span class="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                ACTIVE
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 hidden sm:block">Unified Multi-Account Supabase Gateway</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-4">
+          <button 
+            onclick="triggerKeepAlive()" 
+            title="Instant Keep-Alive Ping" 
+            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 rounded-lg flex items-center gap-1.5 transition"
+          >
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-slow"></span>
+            <span class="hidden sm:inline">Keep-Alive Ping</span>
+            <span class="sm:hidden">Ping</span>
+          </button>
+
+          <button 
+            onclick="copyProxyUrl()" 
+            class="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-xs font-medium text-indigo-300 rounded-lg flex items-center gap-1.5 transition"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <span class="hidden sm:inline">Copy Proxy Endpoint</span>
+            <span class="sm:hidden">Proxy URL</span>
+          </button>
+
+          <button 
+            onclick="lockDashboard()" 
+            class="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 rounded-lg transition" 
+            title="Lock Dashboard"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4 overflow-x-auto py-1 scrollbar-none border-t border-slate-800/60 text-xs font-medium">
+        <button onclick="switchTab('accounts')" id="tab-accounts" class="tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <span>⚡ Connected Accounts</span>
+          <span id="accountCountBadge" class="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 text-[10px] rounded-full">0</span>
+        </button>
+        <button onclick="switchTab('add')" id="tab-add" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>➕ Add & Smart Paste</span>
+        </button>
+        <button onclick="switchTab('keys')" id="tab-keys" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🔑 Master API Keys</span>
+        </button>
+        <button onclick="switchTab('query')" id="tab-query" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🚀 Milliseconds Query Test</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+
+      <!-- Metrics Row -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Connected Accounts</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricAccounts" class="text-2xl font-bold text-white tracking-tight">0</span>
+            <span class="text-[10px] text-emerald-400 font-semibold">Active</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Keep-Alive Sentinel</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricSentinel" class="text-sm font-semibold text-emerald-400">Online</span>
+            <span class="text-[10px] text-slate-400">Anti-Pause</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Proxy Mode</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span class="text-sm font-semibold text-indigo-400">Aggregated</span>
+            <span class="text-[10px] text-slate-400">Parallel</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Avg Latency</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricLatency" class="text-2xl font-bold text-white tracking-tight mono">--</span>
+            <span class="text-[10px] text-slate-400">ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB 1: CONNECTED ACCOUNTS ==================== -->
+      <section id="section-accounts" class="space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Active Supabase Backends</h2>
+            <p class="text-sm text-slate-400">All registered projects stored in Master Supabase that this router orchestrates.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="fetchAccounts()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Refresh
+            </button>
+            <button onclick="switchTab('add')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Connect New Account
+            </button>
+          </div>
+        </div>
+
+        <div id="accountsLoading" class="text-center py-12">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-700 border-t-indigo-500"></div>
+          <p class="text-sm text-slate-400 mt-3">Connecting to Master Database...</p>
+        </div>
+
+        <div id="accountsList" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden"></div>
+
+        <div id="noAccountsNotice" class="hidden text-center py-16 bg-slate-900 border border-dashed border-slate-800 rounded-3xl p-8">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">No Supabase Accounts Connected Yet</h3>
+          <p class="text-sm text-slate-400 max-w-md mx-auto mt-1 mb-6">Connect your Supabase accounts or paste raw keys to let this router automatically balance and merge reads and writes across them.</p>
+          <button onclick="switchTab('add')" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition">
+            Add Your First Account
+          </button>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: ADD & SMART PASTE ==================== -->
+      <section id="section-add" class="hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Connect Supabase Account</h2>
+          <p class="text-sm text-slate-400">Use our Smart Auto-Parser to paste raw project text, or fill in fields manually.</p>
+        </div>
+
+        <!-- Smart Raw Paste Box -->
+        <div class="bg-gradient-to-br from-slate-900 via-indigo-950/20 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🪄</span>
+              <h3 class="text-sm font-bold text-indigo-300 uppercase tracking-wider">Smart Auto-Paste Detector</h3>
+            </div>
+            <span class="text-xs text-slate-400">Auto-detects URL, API keys, Project name</span>
+          </div>
+
+          <textarea 
+            id="rawPasteInput" 
+            rows="4" 
+            placeholder="Paste your raw text from Supabase CLI or project dashboard here (e.g. project url, publishable key, database password, etc.)..." 
+            class="w-full px-4 py-3 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+          ></textarea>
+
+          <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
+            <p class="text-xs text-slate-400">Clicking below extracts all details into the form instantly.</p>
+            <button 
+              type="button" 
+              onclick="smartAutoFill()" 
+              class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center gap-1.5"
+            >
+              <span>⚡ Extract & Auto-Fill Form</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Manual / Verified Form -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+          <form id="addAccountForm" onsubmit="submitNewAccount(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Project Name / Alias</label>
+                <input 
+                  type="text" 
+                  id="formName" 
+                  placeholder="e.g. OTT Platform 1" 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                  required
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Project URL</label>
+                <input 
+                  type="url" 
+                  id="formUrl" 
+                  placeholder="https://xyz.supabase.co" 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
+                  required
+                >
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">API Key (Anon Public or Service Role)</label>
+                <input 
+                  type="text" 
+                  id="formKey" 
+                  placeholder="sb_publishable_... or eyJhbGciOi..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
+                  required
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Database Password (Optional)</label>
+                <input 
+                  type="password" 
+                  id="formPass" 
+                  placeholder="Database connection password..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
+                >
+              </div>
+            </div>
+
+            <div class="pt-2 flex justify-end gap-3">
+              <button 
+                type="button" 
+                onclick="switchTab('accounts')" 
+                class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                id="saveAccountBtn"
+                class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-2"
+              >
+                <span>Save to Master Supabase</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: MASTER API KEYS ==================== -->
+      <section id="section-keys" class="hidden space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Master API Keys</h2>
+            <p class="text-sm text-slate-400">OpenRouter-style master bearer keys. Use this one key to route requests across all your accounts automatically.</p>
+          </div>
+          <button 
+            onclick="generateNewMasterKey()" 
+            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Generate New Master Key
+          </button>
+        </div>
+
+        <div id="keysContainer" class="space-y-3"></div>
+
+        <!-- Code integration helper -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <h3 class="text-sm font-bold text-white uppercase tracking-wider">How to use your Master Key</h3>
+          <p class="text-xs text-slate-400">Send requests directly to your Vercel Proxy endpoint. You can either specify <code class="text-indigo-400">x-project-name</code> for a specific account, or omit it to query ALL accounts in parallel!</p>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 overflow-x-auto">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] text-slate-400 font-semibold mono">cURL Request Example</span>
+              <button onclick="copySnippet('curlSnippet')" class="text-xs text-indigo-400 hover:text-indigo-300">Copy</button>
+            </div>
+            <pre id="curlSnippet" class="text-xs text-emerald-400 mono leading-relaxed">curl -X POST https://proxproject.vercel.app/api/proxy \
+  -H "Authorization: Bearer omni_live_master_default_2026" \
+  -H "x-project-name: all" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "query", "path": "users"}'</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: MILLISECONDS QUERY PLAYGROUND ==================== -->
+      <section id="section-query" class="hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Milliseconds Parallel Query Playground</h2>
+          <p class="text-sm text-slate-400">Test routing or multi-account parallel queries in real-time. See response latency for each account.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Target Account</label>
+              <select id="queryTargetSelect" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="all">⚡ ALL Accounts Merged (Parallel Search)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">REST Resource / Table Subpath</label>
+              <input 
+                type="text" 
+                id="querySubpath" 
+                placeholder="e.g. users, movies, channels (or leave blank for root)" 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Request Method</label>
+              <div class="flex gap-2">
+                <button type="button" onclick="setQueryMethod('GET')" id="method-GET" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold">GET</button>
+                <button type="button" onclick="setQueryMethod('POST')" id="method-POST" class="px-4 py-2 bg-slate-800 text-slate-400 rounded-lg text-xs font-bold">POST</button>
+              </div>
+            </div>
+
+            <button 
+              onclick="runPlaygroundQuery()" 
+              id="runQueryBtn"
+              class="w-full py-3 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span>Execute Parallel Query</span>
+            </button>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-300">Live JSON Response</span>
+              <span id="queryLatencyBadge" class="text-[11px] mono text-emerald-400">0 ms</span>
+            </div>
+            <pre id="queryResultOutput" class="flex-1 min-h-[260px] max-h-[460px] overflow-auto bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs mono text-slate-300 whitespace-pre-wrap leading-relaxed">// Click "Execute Parallel Query" to view response data...</pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950 py-6 text-center text-xs text-slate-500">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p>OTT Router Gateway &bull; Multi-Supabase Proxy System</p>
+        <p class="mono text-[11px] text-slate-600">Vercel Serverless Ready &bull; Keep-Alive Active</p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl px-5 py-3.5 flex items-center gap-3 text-sm text-white">
+      <span id="toastIcon">✅</span>
+      <span id="toastMsg">Operation successful</span>
+    </div>
+  </div>
+
+  <script>
+    // ==================== CONFIGURATION & STATE ====================
+    const ACCESS_CODE = "Adnan@24??";
+    const MASTER_SUPABASE_URL = "https://sjdlejiwqmkyfkvmodgd.supabase.co";
+    const MASTER_SUPABASE_KEY = "sb_publishable_YAv53hX7HhPdxBcsiZpKEA_JHKMmGAt";
+
+    let state = {
+      accounts: [],
+      masterKeys: [
+        { key: 'omni_live_master_default_2026', name: 'Primary Master Key', created: '2026-10-22', status: 'ACTIVE' }
+      ],
+      selectedMethod: 'GET'
+    };
+
+    // ==================== SECURITY & ACCESS ====================
+    function checkAuth() {
+      const isAuthed = sessionStorage.getItem('ott_router_authed');
+      if (isAuthed === 'true') {
+        document.getElementById('lockScreen').classList.add('hidden');
+        document.getElementById('mainDashboard').classList.remove('hidden');
+        initDashboard();
+      }
+    }
+
+    function handleUnlock(e) {
+      e.preventDefault();
+      const code = document.getElementById('accessCodeInput').value.trim();
+      const lockError = document.getElementById('lockError');
+      const lockCard = document.getElementById('lockCard');
+
+      if (code === ACCESS_CODE) {
+        sessionStorage.setItem('ott_router_authed', 'true');
+        lockError.classList.add('hidden');
+        document.getElementById('lockScreen').classList.add('opacity-0');
+        setTimeout(() => {
+          document.getElementById('lockScreen').classList.add('hidden');
+          document.getElementById('mainDashboard').classList.remove('hidden');
+          initDashboard();
+        }, 200);
+      } else {
+        lockError.classList.remove('hidden');
+        lockCard.classList.remove('shake-anim');
+        void lockCard.offsetWidth; // Trigger reflow
+        lockCard.classList.add('shake-anim');
+      }
+    }
+
+    function toggleCodeVisibility() {
+      const input = document.getElementById('accessCodeInput');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function lockDashboard() {
+      sessionStorage.removeItem('ott_router_authed');
+      document.getElementById('mainDashboard').classList.add('hidden');
+      document.getElementById('lockScreen').classList.remove('hidden', 'opacity-0');
+      document.getElementById('accessCodeInput').value = '';
+    }
+
+    // ==================== NAVIGATION TABS ====================
+    function switchTab(tabId) {
+      const tabs = ['accounts', 'add', 'keys', 'query'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        const sec = document.getElementById(`section-${t}`);
+        if (t === tabId) {
+          btn.className = "tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap";
+          sec.classList.remove('hidden');
+        } else {
+          btn.className = "tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap";
+          sec.classList.add('hidden');
+        }
+      });
+    }
+
+    // ==================== DASHBOARD INIT & DATA FETCH ====================
+    async function initDashboard() {
+      await fetchAccounts();
+      renderMasterKeys();
+    }
+
+    async function fetchAccounts() {
+      const loading = document.getElementById('accountsLoading');
+      const list = document.getElementById('accountsList');
+      const emptyNotice = document.getElementById('noAccountsNotice');
+
+      loading.classList.remove('hidden');
+      list.classList.add('hidden');
+      emptyNotice.classList.add('hidden');
+
+      let accounts = [];
+
+      // 1. Try internal backend API
+      try {
+        const res = await fetch('/api/accounts');
+        if (res.ok) {
+          accounts = await res.json();
+        }
+      } catch (err) {
+        console.warn('Backend API unavailable, using direct Supabase client fallback:', err);
+      }
+
+      // 2. Direct Supabase REST Fallback if /api/accounts failed
+      if (!accounts || accounts.length === 0) {
+        try {
+          const directRes = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?select=*`, {
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+          if (directRes.ok) {
+            accounts = await directRes.json();
+          }
+        } catch (fbErr) {
+          console.error('Direct fallback error:', fbErr);
+        }
+      }
+
+      state.accounts = Array.isArray(accounts) ? accounts : [];
+
+      loading.classList.add('hidden');
+      document.getElementById('metricAccounts').innerText = state.accounts.length;
+      document.getElementById('accountCountBadge').innerText = state.accounts.length;
+
+      updateQueryDropdown();
+
+      if (state.accounts.length === 0) {
+        emptyNotice.classList.remove('hidden');
+      } else {
+        renderAccountsList();
+        list.classList.remove('hidden');
+      }
+    }
+
+    function renderAccountsList() {
+      const container = document.getElementById('accountsList');
+      container.innerHTML = state.accounts.map(acc => `
+        <div class="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 shadow-sm transition">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-white text-base">${escapeHtml(acc.name || 'Unnamed')}</h3>
+                <span class="px-2 py-0.5 text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-md font-medium">Supabase</span>
+              </div>
+              <p class="text-xs text-slate-400 mono mt-0.5 truncate max-w-[240px] sm:max-w-[320px]">${escapeHtml(acc.project_url || '')}</p>
+            </div>
+            <button 
+              onclick="deleteAccount('${acc.id}', '${escapeHtml(acc.name)}')" 
+              class="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+              title="Delete Account"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 mb-3 space-y-1.5 text-xs">
+            <div class="flex justify-between items-center text-slate-400">
+              <span>API Key:</span>
+              <span class="mono text-slate-300 truncate max-w-[180px]">${maskKey(acc.api_key)}</span>
+            </div>
+            ${acc.db_password ? `
+              <div class="flex justify-between items-center text-slate-400">
+                <span>DB Password:</span>
+                <span class="mono text-slate-300">••••••••••</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="flex items-center justify-between pt-1">
+            <button 
+              onclick="pingSingleAccount('${acc.project_url}', '${acc.api_key}', 'ping-result-${acc.id}')" 
+              class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-300 rounded-lg border border-slate-700 flex items-center gap-1.5 transition"
+            >
+              <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span>Test Ping</span>
+            </button>
+            <span id="ping-result-${acc.id}" class="text-[11px] text-slate-400 mono">Ready</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ==================== SMART AUTO-PASTE PARSER ====================
+    function smartAutoFill() {
+      const raw = document.getElementById('rawPasteInput').value;
+      if (!raw.trim()) {
+        showToast('⚠️ Paste some text in the box first!');
+        return;
+      }
+
+      // Regex patterns to capture project name, project url, and keys
+      const urlMatch = raw.match(/https:\/\/[a-zA-Z0-9-]+\.supabase\.co/i);
+      const keyMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i) || raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/i);
+      const nameMatch = raw.match(/(?:project\s*name\s*[:\s]*)(.+)/i);
+      const passMatch = raw.match(/(?:password\s*[:\s]*)(.+)/i) || raw.match(/(?:Database\s*password\s*[:\s]*)(.+)/i);
+
+      if (urlMatch) document.getElementById('formUrl').value = urlMatch[0];
+      if (keyMatch) document.getElementById('formKey').value = keyMatch[0];
+      if (nameMatch) {
+        document.getElementById('formName').value = nameMatch[1].trim().split('\n')[0];
+      } else if (urlMatch) {
+        // Derive name from subdomain
+        const sub = urlMatch[0].replace('https://', '').split('.')[0];
+        document.getElementById('formName').value = 'Project ' + sub;
+      }
+      if (passMatch) {
+        document.getElementById('formPass').value = passMatch[1].trim().split('\n')[0];
+      }
+
+      showToast('✨ Extracted fields successfully!');
+    }
+
+    // ==================== SUBMIT NEW ACCOUNT ====================
+    async function submitNewAccount(e) {
+      e.preventDefault();
+      const btn = document.getElementById('saveAccountBtn');
+      btn.disabled = true;
+      btn.innerText = "Saving...";
+
+      const payload = {
+        name: document.getElementById('formName').value.trim(),
+        project_url: document.getElementById('formUrl').value.trim(),
+        api_key: document.getElementById('formKey').value.trim(),
+        db_password: document.getElementById('formPass').value.trim()
+      };
+
+      try {
+        let res = await fetch('/api/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          // Direct fallback
+          res = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts`, {
+            method: 'POST',
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (res.ok) {
+          showToast('✅ Account added successfully!');
+          document.getElementById('addAccountForm').reset();
+          document.getElementById('rawPasteInput').value = '';
+          switchTab('accounts');
+          await fetchAccounts();
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          showToast('❌ Error: ' + (errData.error || 'Failed to save account'));
+        }
+      } catch (err) {
+        showToast('❌ Network error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Save to Master Supabase";
+      }
+    }
+
+    async function deleteAccount(id, name) {
+      if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+
+      try {
+        let res = await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          res = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?id=eq.${id}`, {
+            method: 'DELETE',
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+        }
+        showToast('🗑️ Account removed');
+        await fetchAccounts();
+      } catch (err) {
+        showToast('❌ Failed to delete: ' + err.message);
+      }
+    }
+
+    // ==================== TEST PING ====================
+    async function pingSingleAccount(url, key, targetElementId) {
+      const el = document.getElementById(targetElementId);
+      el.innerText = 'Pinging...';
+      el.className = 'text-[11px] text-amber-400 mono';
+
+      const start = Date.now();
+      try {
+        const cleanUrl = url.replace(/\/+$/, '');
+        const res = await fetch(`${cleanUrl}/rest/v1/`, {
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`
+          }
+        });
+        const latency = Date.now() - start;
+        el.innerText = `${latency}ms (${res.status})`;
+        el.className = 'text-[11px] text-emerald-400 mono font-semibold';
+      } catch (err) {
+        const latency = Date.now() - start;
+        el.innerText = `${latency}ms (ERR)`;
+        el.className = 'text-[11px] text-rose-400 mono';
+      }
+    }
+
+    async function triggerKeepAlive() {
+      showToast('⚡ Running Keep-Alive ping on all projects...');
+      try {
+        const res = await fetch('/api/proxy?action=ping');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('metricLatency').innerText = Math.round(data.totalTimeMs / (data.total || 1));
+          showToast(`✅ Keep-Alive complete: ${data.total} accounts active (${data.totalTimeMs}ms)`);
+        } else {
+          showToast('Keep-Alive heartbeat sent');
+        }
+      } catch (err) {
+        showToast('Keep-Alive pulse executed');
+      }
+    }
+
+    // ==================== MASTER KEYS ====================
+    function renderMasterKeys() {
+      const container = document.getElementById('keysContainer');
+      container.innerHTML = state.masterKeys.map((k, index) => `
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-white text-sm">${escapeHtml(k.name)}</span>
+              <span class="px-2 py-0.5 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-full font-semibold">ACTIVE</span>
+            </div>
+            <p class="mono text-xs text-indigo-400 mt-1">${k.key}</p>
+          </div>
+          <button 
+            onclick="copyText('${k.key}', 'Master Key copied!')" 
+            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg border border-slate-700 transition"
+          >
+            Copy Key
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function generateNewMasterKey() {
+      const name = prompt("Enter a label for this Master API Key:", "Mobile App Client " + (state.masterKeys.length + 1));
+      if (!name) return;
+
+      const randomPart = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const newKey = `omni_live_${randomPart}`;
+
+      state.masterKeys.push({
+        key: newKey,
+        name: name,
+        created: new Date().toISOString().split('T')[0],
+        status: 'ACTIVE'
+      });
+
+      renderMasterKeys();
+      showToast('🔑 New Master Key generated!');
+    }
+
+    // ==================== PLAYGROUND & QUERY ====================
+    function updateQueryDropdown() {
+      const sel = document.getElementById('queryTargetSelect');
+      sel.innerHTML = `<option value="all">⚡ ALL Accounts Merged (Parallel Search)</option>` + 
+        state.accounts.map(acc => `<option value="${escapeHtml(acc.name)}">${escapeHtml(acc.name)} (${escapeHtml(acc.project_url)})</option>`).join('');
+    }
+
+    function setQueryMethod(m) {
+      state.selectedMethod = m;
+      document.getElementById('method-GET').className = m === 'GET' ? 'px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold' : 'px-4 py-2 bg-slate-800 text-slate-400 rounded-lg text-xs font-bold';
+      document.getElementById('method-POST').className = m === 'POST' ? 'px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold' : 'px-4 py-2 bg-slate-800 text-slate-400 rounded-lg text-xs font-bold';
+    }
+
+    async function runPlaygroundQuery() {
+      const target = document.getElementById('queryTargetSelect').value;
+      const subpath = document.getElementById('querySubpath').value.trim();
+      const output = document.getElementById('queryResultOutput');
+      const latencyBadge = document.getElementById('queryLatencyBadge');
+      const btn = document.getElementById('runQueryBtn');
+
+      btn.disabled = true;
+      output.innerText = '// Query executing across target accounts in parallel...';
+
+      const startTime = Date.now();
+      try {
+        const queryUrl = `/api/proxy?path=${encodeURIComponent(subpath)}`;
+        const res = await fetch(queryUrl, {
+          method: state.selectedMethod,
+          headers: {
+            'x-project-name': target,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const elapsed = Date.now() - startTime;
+        latencyBadge.innerText = `${elapsed} ms`;
+
+        const data = await res.json().catch(() => ({ status: res.status, text: 'Non-JSON response' }));
+        output.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.innerText = '// Error executing query:\n' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ==================== UTILS ====================
+    function maskKey(k) {
+      if (!k) return 'None';
+      if (k.length <= 12) return '••••••';
+      return k.slice(0, 8) + '••••••••' + k.slice(-4);
+    }
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function copyProxyUrl() {
+      const url = window.location.origin + '/api/proxy';
+      copyText(url, 'Proxy URL copied: ' + url);
+    }
+
+    function copySnippet(id) {
+      const text = document.getElementById(id).innerText;
+      copyText(text, 'Code snippet copied!');
+    }
+
+    function copyText(txt, msg) {
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast(msg || 'Copied to clipboard');
+      }).catch(() => {
+        showToast('Copied: ' + txt);
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3000);
+    }
+
+    // Auto-check authentication on load
+    window.addEventListener('DOMContentLoaded', checkAuth);
+  </script>
+</body>
+</html>
