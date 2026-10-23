@@ -4,4 +4,5 @@ interface SupabaseAccountRepository {
     fun saveAccount(account: SupabaseAccount)
     fun getAllAccounts(): List<SupabaseAccount>
     fun deleteAccount(accountId: String)
+    fun toggleAccountStatus(accountId: String): SupabaseAccount?
 }

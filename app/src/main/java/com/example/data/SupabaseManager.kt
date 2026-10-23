@@ -5,6 +5,7 @@ import android.content.Context
 class SupabaseManager(context: Context) {
     private val repository = EncryptedSupabaseAccountRepository(context)
 
+    // ================= ACCOUNT OPERATIONS =================
     fun getAllAccounts(): List<SupabaseAccount> {
         return repository.getAllAccounts()
     }
@@ -17,7 +18,28 @@ class SupabaseManager(context: Context) {
         repository.deleteAccount(accountId)
     }
 
-    // This is where the "merged" logic will reside.
-    // In a real app, this would use a Supabase client factory
-    // to create clients dynamically for each account.
+    fun toggleAccountStatus(accountId: String): SupabaseAccount? {
+        return repository.toggleAccountStatus(accountId)
+    }
+
+    // ================= MASTER KEY OPERATIONS =================
+    fun getAllMasterKeys(): List<MasterKey> {
+        return repository.getAllMasterKeys()
+    }
+
+    fun createMasterKey(
+        name: String,
+        connectedAccountIds: List<String> = emptyList(),
+        connectedAccountNames: List<String> = emptyList()
+    ): MasterKey {
+        return repository.generateNewMasterKey(name, connectedAccountIds, connectedAccountNames)
+    }
+
+    fun deleteMasterKey(key: String) {
+        repository.deleteMasterKey(key)
+    }
+
+    fun toggleMasterKeyStatus(key: String): MasterKey? {
+        return repository.toggleMasterKeyStatus(key)
+    }
 }

@@ -69,7 +69,9 @@ module.exports = async (req, res) => {
         name: name.trim(), 
         project_url: cleanUrl, 
         api_key: api_key.trim(), 
-        db_password: (db_password || '').trim() 
+        db_password: (db_password || '').trim(),
+        routing_tag: (body.routing_tag || '').trim(),
+        is_active: body.is_active !== undefined ? body.is_active : true
       };
 
       const { data, error } = await supabase
@@ -91,18 +93,65 @@ module.exports = async (req, res) => {
     }
   }
 
-  // DELETE: Delete account by id
-  if (req.method === 'DELETE') {
+  // PATCH / PUT: Update account status or details
+  if (req.method === 'PATCH' || req.method === 'PUT') {
     try {
       const id = req.query.id || body.id;
       if (!id) {
-        return res.status(400).json({ error: 'Account id is required for deletion' });
+        return res.status(400).json({ error: 'Account id is required for update' });
       }
+      const updateData = {};
+      if (body.name !== undefined) updateData.name = body.name;
+      if (body.project_url !== undefined) updateData.project_url = body.project_url;
+      if (body.api_key !== undefined) updateData.api_key = body.api_key;
+      if (body.db_password !== undefined) updateData.db_password = body.db_password;
+      if (body.routing_tag !== undefined) updateData.routing_tag = body.routing_tag;
+      if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
       const { data, error } = await supabase
         .from('supabase_accounts')
-        .delete()
-        .eq('id', id);
+        .update(updateData)
+        .eq('id', id)
+        .select();
+
+      if (error) {
+        return res.status(500).json({ error: error.message, details: error });
+      }
+      return res.status(200).json({ success: true, data: data?.[0] });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // DELETE: Delete account by id, name, or project_url
+  if (req.method === 'DELETE') {
+    try {
+      const id = req.query.id || body.id;
+      const name = req.query.name || body.name;
+      const projectUrl = req.query.project_url || req.query.url || body.project_url || body.url;
+
+      if (!id && !name && !projectUrl) {
+        return res.status(400).json({ error: 'Account id, name, or project_url is required for deletion' });
+      }
+
+      let deleteBuilder = supabase.from('supabase_accounts').delete();
+      if (id) {
+        deleteBuilder = deleteBuilder.eq('id', id);
+      } else if (name) {
+        deleteBuilder = deleteBuilder.eq('name', name);
+      } else if (projectUrl) {
+        deleteBuilder = deleteBuilder.eq('project_url', projectUrl);
+      }
+
+      const { data, error } = await deleteBuilder;
+
+      // Redundant purge to ensure no zombie records
+      if (name && id) {
+        try { await supabase.from('supabase_accounts').delete().eq('name', name); } catch(e) {}
+      }
+      if (projectUrl && id) {
+        try { await supabase.from('supabase_accounts').delete().eq('project_url', projectUrl); } catch(e) {}
+      }
 
       if (error) {
         return res.status(500).json({ error: error.message, details: error });
