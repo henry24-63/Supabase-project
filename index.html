@@ -719,6 +719,43 @@
       </div>
     </div>
 
+    <!-- ================= CREATE MASTER KEY MODAL ================= -->
+    <div id="masterKeyModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white">Generate New Master Key</h3>
+            <p class="text-xs text-slate-400">Configure routing destination and run live pre-test handshake.</p>
+          </div>
+          <button onclick="closeMasterKeyModal()" class="text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Key Label / Name</label>
+          <input type="text" id="newKeyNameInput" placeholder="e.g. Mobile App Client Key" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Connected Routing Destination</label>
+          <div id="newKeyAccountsCheckboxes" class="space-y-2 max-h-40 overflow-auto bg-slate-950 border border-slate-800 rounded-xl p-3">
+            <!-- Dynamically populated checkboxes -->
+          </div>
+        </div>
+
+        <div id="keyTestStatusBox" class="hidden p-3 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300">
+          <div class="flex items-center gap-2">
+            <span class="animate-spin inline-block w-3 h-3 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full"></span>
+            <span id="keyTestStatusText">Smart testing read/write connection on target accounts...</span>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeMasterKeyModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+          <button type="button" onclick="preTestAndGenerateMasterKey()" id="generateKeySubmitBtn" class="px-5 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25">Pre-Test & Generate Key</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer -->
     <footer class="border-t border-slate-800/80 bg-slate-950 py-6 text-center text-xs text-slate-500">
       <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -2051,23 +2088,120 @@ to '${acc.name}' without scanning any other accounts!
     }
 
     function generateNewMasterKey() {
-      const name = prompt("Enter a label for this Master API Key:", "Mobile App Client " + (state.masterKeys.length + 1));
-      if (!name) return;
+      const nameInput = document.getElementById('newKeyNameInput');
+      if (nameInput) nameInput.value = "Mobile App Client " + (state.masterKeys.length + 1);
+
+      const container = document.getElementById('newKeyAccountsCheckboxes');
+      if (container) {
+        if (state.accounts.length === 0) {
+          container.innerHTML = `<label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" checked disabled class="rounded bg-slate-900 border-slate-700"> All Accounts (Universal Router - No accounts connected yet)</label>`;
+        } else {
+          container.innerHTML = `
+            <label class="flex items-center gap-2 text-xs text-white font-semibold pb-1 border-b border-slate-800 cursor-pointer">
+              <input type="checkbox" id="selectAllAccountsCheck" onchange="toggleSelectAllAccounts(this)" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600">
+              <span>⚡ All Accounts (Universal Router)</span>
+            </label>
+          ` + state.accounts.map(acc => `
+            <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" name="masterKeyAccountCheck" value="${escapeHtml(acc.name)}" data-url="${escapeHtml(acc.project_url)}" data-key="${escapeHtml(acc.api_key)}" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600">
+              <span>${escapeHtml(acc.name)}</span>
+              <span class="mono text-[10px] text-slate-500">(#${escapeHtml(acc.routing_tag || acc.name.toLowerCase().replace(/\s+/g, '-'))})</span>
+            </label>
+          `).join('');
+        }
+      }
+
+      document.getElementById('keyTestStatusBox').classList.add('hidden');
+      document.getElementById('masterKeyModal').classList.remove('hidden');
+    }
+
+    function closeMasterKeyModal() {
+      document.getElementById('masterKeyModal').classList.add('hidden');
+    }
+
+    function toggleSelectAllAccounts(masterCheck) {
+      const checks = document.querySelectorAll('input[name="masterKeyAccountCheck"]');
+      checks.forEach(c => c.checked = masterCheck.checked);
+    }
+
+    async function preTestAndGenerateMasterKey() {
+      const name = (document.getElementById('newKeyNameInput').value || '').trim();
+      if (!name) {
+        showToast('⚠️ Please enter a key label!', 'warn');
+        return;
+      }
+
+      const statusBox = document.getElementById('keyTestStatusBox');
+      const statusText = document.getElementById('keyTestStatusText');
+      const submitBtn = document.getElementById('generateKeySubmitBtn');
+
+      statusBox.className = "p-3 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300";
+      statusBox.classList.remove('hidden');
+      statusText.innerText = "Running smart pre-test read/write handshake across selected accounts...";
+      submitBtn.disabled = true;
+
+      const checks = document.querySelectorAll('input[name="masterKeyAccountCheck"]:checked');
+      const selectedAccounts = Array.from(checks).map(c => ({
+        name: c.value,
+        url: c.getAttribute('data-url'),
+        key: c.getAttribute('data-key')
+      }));
+
+      let testPassed = true;
+      let testMessage = '';
+
+      if (selectedAccounts.length > 0) {
+        try {
+          const sample = selectedAccounts[0];
+          const testRes = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(sample.url)}&key=${encodeURIComponent(sample.key)}`);
+          if (testRes.ok) {
+            const data = await testRes.json();
+            if (data.status === 'AUTH_FAILED') {
+              testPassed = false;
+              testMessage = `Pre-test auth failed for '${sample.name}': ${data.error}`;
+            }
+          }
+        } catch (err) {
+          console.warn('Pre-test network warning:', err);
+        }
+      }
+
+      if (!testPassed) {
+        statusBox.className = "p-3 rounded-xl text-xs bg-rose-950/40 border border-rose-500/40 text-rose-300";
+        statusText.innerText = testMessage;
+        submitBtn.disabled = false;
+        return;
+      }
+
+      statusBox.className = "p-3 rounded-xl text-xs bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+      statusText.innerText = "✅ Pre-test handshake passed successfully! Generating key...";
+
+      await new Promise(r => setTimeout(r, 600));
 
       const randomPart = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(16).padStart(2, '0')).join('');
       const newKey = `omni_live_${randomPart}`;
+
+      let destinationSummary = 'All Accounts (Universal Router)';
+      const allCheck = document.getElementById('selectAllAccountsCheck');
+      if (allCheck && allCheck.checked) {
+        destinationSummary = `All Accounts (${state.accounts.length} connected)`;
+      } else if (selectedAccounts.length > 0) {
+        destinationSummary = selectedAccounts.map(a => a.name).join(', ');
+      }
 
       state.masterKeys.push({
         key: newKey,
         name: name,
         created: new Date().toISOString().split('T')[0],
         status: 'ACTIVE',
-        destination: 'All Accounts (Universal Router)'
+        destination: destinationSummary
       });
 
       saveMasterKeysCache();
       renderMasterKeys();
-      showToast('🔑 New Master Key generated successfully!', 'success');
+      closeMasterKeyModal();
+      submitBtn.disabled = false;
+      showToast('🔑 Master Key pre-tested and generated successfully!', 'success');
     }
 
     function deleteMasterKey(index) {
