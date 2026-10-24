@@ -15,6 +15,10 @@ data class SupabaseAccount(
     val secretKey: String = "",
     @param:Json(name = "service_role_key")
     val serviceRoleKey: String = "",
+    @param:Json(name = "anon_key")
+    val anonKey: String = "",
+    @param:Json(name = "db_connection_string")
+    val dbConnectionString: String = "",
     val databasePassword: String,
     @param:Json(name = "routing_tag")
     val routingTag: String = "",
@@ -25,7 +29,7 @@ data class SupabaseAccount(
         get() = secretKey.ifBlank { serviceRoleKey.ifBlank { apiKey } }
 
     val effectivePublishableKey: String
-        get() = publishableKey.ifBlank { apiKey }
+        get() = publishableKey.ifBlank { anonKey.ifBlank { apiKey } }
 
     val effectiveTag: String
         get() {

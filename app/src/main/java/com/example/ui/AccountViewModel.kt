@@ -107,11 +107,13 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                                 val publishableKey = item.optString("publishable_key", "")
                                 val secretKey = item.optString("secret_key", "")
                                 val serviceRoleKey = item.optString("service_role_key", "")
+                                val anonKey = item.optString("anon_key", "")
+                                val dbConnectionString = item.optString("db_connection_string", "")
                                 val dbPassword = item.optString("db_password", "")
                                 val routingTag = item.optString("routing_tag", "")
                                 val isActive = item.optBoolean("is_active", true)
 
-                                val effectiveKey = apiKey.ifBlank { secretKey.ifBlank { publishableKey } }
+                                val effectiveKey = apiKey.ifBlank { secretKey.ifBlank { publishableKey.ifBlank { anonKey } } }
 
                                 if (projectUrl.isNotBlank() && effectiveKey.isNotBlank()) {
                                     val accountObj = SupabaseAccount(
@@ -122,6 +124,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                                         publishableKey = publishableKey.trim(),
                                         secretKey = secretKey.trim(),
                                         serviceRoleKey = serviceRoleKey.ifBlank { secretKey }.trim(),
+                                        anonKey = anonKey.trim(),
+                                        dbConnectionString = dbConnectionString.trim(),
                                         databasePassword = dbPassword.trim(),
                                         routingTag = routingTag.trim(),
                                         isActive = isActive
@@ -575,6 +579,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                     put("publishable_key", account.publishableKey)
                     put("secret_key", account.secretKey)
                     put("service_role_key", account.serviceRoleKey)
+                    put("anon_key", account.anonKey)
+                    put("db_connection_string", account.dbConnectionString)
                     put("db_password", account.databasePassword)
                     put("routing_tag", account.routingTag)
                     put("is_active", account.isActive)

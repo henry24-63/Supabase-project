@@ -409,6 +409,16 @@
               </div>
             </div>
 
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Database Connection String (URI - Optional)</label>
+              <input 
+                type="text" 
+                id="formConnString" 
+                placeholder="postgresql://postgres:[password]@db.xyz.supabase.co:5432/postgres" 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 mono" 
+              >
+            </div>
+
             <!-- Inline Test Result Box -->
             <div id="inlineTestResult" class="hidden p-4 rounded-xl text-xs space-y-1.5 transition-all"></div>
 
@@ -1171,14 +1181,15 @@
         return;
       }
 
-      // Regex patterns to capture project name, project url, and keys
+      // Regex patterns to capture project name, project url, keys, and DB URI
       const dashMatch = raw.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
       const urlMatch = raw.match(/https?:\/\/[a-zA-Z0-9.-]+\.supabase\.co/i);
       const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
       const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
       const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
-      const nameMatch = raw.match(/(?:project\s*name\s*[:\s]*)(.+)/i);
-      const passMatch = raw.match(/(?:Database\s*password\s*[:\s]*)(.+)/i) || raw.match(/(?:password\s*[:\s]*)(.+)/i);
+      const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:\s]*([^\n\r]+)/i);
+      const passMatch = raw.match(/(?:Database\s*password|password|db_password)\s*[:\s]*([^\n\r]+)/i);
+      const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
 
       if (dashMatch) {
         document.getElementById('formUrl').value = `https://${dashMatch[1]}.supabase.co`;
@@ -1200,16 +1211,27 @@
         if (jwtMatches.length > 1 && secEl) secEl.value = jwtMatches[1].trim();
       }
 
-      if (nameMatch) {
-        document.getElementById('formName').value = nameMatch[1].trim().split('\n')[0].replace(/['"]/g, '');
+      if (uriMatch) {
+        const connEl = document.getElementById('formConnString');
+        if (connEl) connEl.value = uriMatch[0].trim();
+
+        // Extract password embedded in URI if present e.g. postgres://postgres:password@host
+        const uriPassMatch = uriMatch[0].match(/:\/\/[^:]+:([^@]+)@/);
+        if (uriPassMatch && uriPassMatch[1] && uriPassMatch[1] !== '[YOUR-PASSWORD]' && uriPassMatch[1] !== 'YOUR-PASSWORD') {
+          document.getElementById('formPass').value = uriPassMatch[1].trim();
+        }
+      }
+
+      if (nameMatch && nameMatch[1]) {
+        document.getElementById('formName').value = nameMatch[1].trim().replace(/['"]/g, '');
       } else if (dashMatch || urlMatch) {
         const fullUrl = document.getElementById('formUrl').value;
         const sub = fullUrl.replace(/https?:\/\//, '').split('.')[0];
         document.getElementById('formName').value = 'Project ' + sub;
       }
 
-      if (passMatch) {
-        document.getElementById('formPass').value = passMatch[1].trim().split('\n')[0].replace(/['"]/g, '');
+      if (passMatch && passMatch[1] && !document.getElementById('formPass').value) {
+        document.getElementById('formPass').value = passMatch[1].trim().replace(/['"]/g, '');
       }
 
       showToast('✨ Auto-detected and filled form fields!', 'success');
@@ -1323,6 +1345,7 @@
       const secKeyInput = document.getElementById('formSecretKey');
       const passInput = document.getElementById('formPass');
       const tagInput = document.getElementById('formTag');
+      const connStrInput = document.getElementById('formConnString');
 
       const name = nameInput.value.trim();
       let project_url = urlInput.value.trim();
@@ -1330,6 +1353,7 @@
       const secret_key = secKeyInput ? secKeyInput.value.trim() : '';
       const api_key = secret_key || publishable_key;
       const db_password = passInput ? passInput.value.trim() : '';
+      const db_connection_string = connStrInput ? connStrInput.value.trim() : '';
       const routing_tag = tagInput ? tagInput.value.trim() : '';
 
       clearFormAlert();
@@ -1392,6 +1416,7 @@
         service_role_key: secret_key,
         api_key,
         db_password,
+        db_connection_string,
         routing_tag
       };
 

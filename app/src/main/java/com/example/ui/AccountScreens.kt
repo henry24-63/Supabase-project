@@ -1386,9 +1386,9 @@ fun AddAccountScreen(
                                 val pubKeyMatch = Regex("sb_publishable_[a-zA-Z0-9_-]+", RegexOption.IGNORE_CASE).find(rawData)
                                 val secKeyMatch = Regex("sb_secret_[a-zA-Z0-9_-]+", RegexOption.IGNORE_CASE).find(rawData)
                                 val jwtKeyMatch = Regex("eyJhbGciOi[a-zA-Z0-9._-]+").find(rawData)
-                                val nameMatch = Regex("(?:project\\s*name\\s*[:\\s]*)(.+)", RegexOption.IGNORE_CASE).find(rawData)
-                                val passMatch = Regex("(?:Database\\s*password\\s*[:\\s]*)(.+)", RegexOption.IGNORE_CASE).find(rawData)
-                                    ?: Regex("(?:password\\s*[:\\s]*)(.+)", RegexOption.IGNORE_CASE).find(rawData)
+                                val nameMatch = Regex("(?:project\\s*name|alias|name)\\s*[:\\s]*([^\\n\\r]+)", RegexOption.IGNORE_CASE).find(rawData)
+                                val passMatch = Regex("(?:Database\\s*password|password|db_password)\\s*[:\\s]*([^\\n\\r]+)", RegexOption.IGNORE_CASE).find(rawData)
+                                val uriMatch = Regex("(?:postgresql|postgres)://[^\\s\"']+", RegexOption.IGNORE_CASE).find(rawData)
 
                                 if (dashMatch != null) {
                                     url = "https://${dashMatch.groupValues[1]}.supabase.co"
@@ -1406,14 +1406,27 @@ fun AddAccountScreen(
                                     publishableKey = jwtKeyMatch.value.trim()
                                 }
 
-                                if (nameMatch != null) {
-                                    name = nameMatch.groupValues[1].lines().first().trim()
+                                if (uriMatch != null) {
+                                    val uriStr = uriMatch.value.trim()
+                                    val uriPassMatch = Regex("://[^:]+:([^@]+)@").find(uriStr)
+                                    if (uriPassMatch != null) {
+                                        val extractedPass = uriPassMatch.groupValues[1].trim()
+                                        if (extractedPass != "[YOUR-PASSWORD]" && extractedPass != "YOUR-PASSWORD") {
+                                            pass = extractedPass
+                                        }
+                                    }
+                                }
+
+                                if (nameMatch != null && nameMatch.groupValues[1].isNotBlank()) {
+                                    name = nameMatch.groupValues[1].trim().trim('\'', '"')
                                 } else if (url.isNotBlank()) {
                                     val sub = url.replace("https://", "").replace("http://", "").split(".").first()
                                     name = "Project $sub"
                                 }
 
-                                if (passMatch != null) pass = passMatch.groupValues[1].lines().first().trim()
+                                if (passMatch != null && passMatch.groupValues[1].isNotBlank() && pass.isBlank()) {
+                                    pass = passMatch.groupValues[1].trim().trim('\'', '"')
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),

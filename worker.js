@@ -107,6 +107,14 @@ export default {
       }
     }
 
+    // 2.5 SMART RAW TEXT PARSER ROUTE (/api/parse-raw)
+    if ((url.pathname === '/api/parse-raw' || url.pathname === '/api/parse-raw/') && method === 'POST') {
+      const reqBody = await request.json().catch(() => ({}));
+      const rawText = reqBody.raw_text || reqBody.text || reqBody.raw || '';
+      const parsed = parseRawSupabaseCredentials(rawText);
+      return new Response(JSON.stringify({ success: true, extracted: parsed }), { status: 200, headers: corsHeaders });
+    }
+
     // 3. API ACCOUNTS ROUTE (/api/accounts)
     if (url.pathname === '/api/accounts' || url.pathname === '/api/accounts/') {
       if (method === 'GET') {
@@ -679,4 +687,72 @@ async function attemptAutoProvisionTable(targetAccount, tableName, sampleData, e
   const sql = generateCreateTableSql(tableName, sampleData);
   const res = await attemptExecuteSql(targetAccount, sql, env);
   return res;
+}
+
+function parseRawSupabaseCredentials(raw) {
+  if (!raw || typeof raw !== 'string') return {};
+  
+  const dashMatch = raw.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
+  const urlMatch = raw.match(/https?:\/\/[a-zA-Z0-9.-]+\.supabase\.co/i);
+  const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
+  const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
+  const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
+  const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:\s]*([^\n\r]+)/i);
+  const passMatch = raw.match(/(?:Database\s*password|password|db_password)\s*[:\s]*([^\n\r]+)/i);
+  const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
+
+  let project_url = '';
+  if (dashMatch) {
+    project_url = `https://${dashMatch[1]}.supabase.co`;
+  } else if (urlMatch) {
+    project_url = urlMatch[0].trim();
+  }
+
+  let publishable_key = pubMatch ? pubMatch[0].trim() : '';
+  let secret_key = secMatch ? secMatch[0].trim() : '';
+  let anon_key = '';
+  let service_role_key = '';
+
+  if (jwtMatches && jwtMatches.length > 0) {
+    if (!publishable_key) publishable_key = jwtMatches[0].trim();
+    anon_key = jwtMatches[0].trim();
+    if (jwtMatches.length > 1) {
+      if (!secret_key) secret_key = jwtMatches[1].trim();
+      service_role_key = jwtMatches[1].trim();
+    }
+  }
+
+  let db_connection_string = uriMatch ? uriMatch[0].trim() : '';
+  let db_password = '';
+
+  if (uriMatch) {
+    const uriPassMatch = uriMatch[0].match(/:\/\/[^:]+:([^@]+)@/);
+    if (uriPassMatch && uriPassMatch[1] && uriPassMatch[1] !== '[YOUR-PASSWORD]' && uriPassMatch[1] !== 'YOUR-PASSWORD') {
+      db_password = uriPassMatch[1].trim();
+    }
+  }
+
+  if (passMatch && passMatch[1] && !db_password) {
+    db_password = passMatch[1].trim().replace(/['"]/g, '');
+  }
+
+  let project_name = '';
+  if (nameMatch && nameMatch[1]) {
+    project_name = nameMatch[1].trim().replace(/['"]/g, '');
+  } else if (project_url) {
+    const sub = project_url.replace(/https?:\/\//, '').split('.')[0];
+    project_name = 'Project ' + sub;
+  }
+
+  return {
+    project_name,
+    project_url,
+    publishable_key,
+    secret_key,
+    anon_key,
+    service_role_key: service_role_key || secret_key,
+    api_key: secret_key || publishable_key,
+    db_connection_string,
+    db_password
+  };
 }
