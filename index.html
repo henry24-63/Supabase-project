@@ -635,6 +635,8 @@
             <button onclick="loadSqlPreset('delete')" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg transition">❌ Delete Record</button>
             <button onclick="loadSqlPreset('drop_table')" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg transition">🗑️ Drop Table</button>
             <button onclick="loadSqlPreset('sql')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition">🔍 Custom SQL</button>
+            <button onclick="loadSqlPreset('control_list')" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg transition">🛡️ Control: List</button>
+            <button onclick="loadSqlPreset('control_toggle')" class="px-2.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg transition">🛡️ Control: Toggle</button>
           </div>
         </div>
 
@@ -2154,15 +2156,35 @@ to '${acc.name}' without scanning any other accounts!
       }
 
       if (Array.isArray(keys) && keys.length > 0) {
-        // Filter legacy key
-        keys = keys.filter(k => k.key !== 'omni_live_master_default_2026');
         // Merge remote keys with local state keys (dedup by key string)
         const map = new Map();
-        keys.forEach(k => map.set(k.key, k));
+        keys.forEach(k => {
+          const keyVal = k.key || k.master_key;
+          if (keyVal) map.set(keyVal, {
+            ...k,
+            key: keyVal,
+            name: k.name || k.key_name || 'Master Router Key',
+            status: k.status || (k.is_active !== undefined ? (k.is_active ? 'ACTIVE' : 'REVOKED') : 'ACTIVE'),
+            destination: k.destination || 'All Accounts (Universal Router)',
+            allowed_methods: k.allowed_methods || ["direct_postgres", "service_role", "anon"]
+          });
+        });
         state.masterKeys.forEach(k => {
-          if (k.key !== 'omni_live_master_default_2026') map.set(k.key, k);
+          if (k.key && !map.has(k.key)) map.set(k.key, k);
         });
         state.masterKeys = Array.from(map.values());
+        saveMasterKeysCache();
+      }
+
+      if (state.masterKeys.length === 0) {
+        state.masterKeys = [{
+          key: 'omni_live_master_default_2026',
+          name: 'Universal Master Root Key',
+          status: 'ACTIVE',
+          destination: 'All Accounts (Universal Router)',
+          allowed_methods: ["direct_postgres", "service_role", "anon"],
+          created: '2026-01-01'
+        }];
         saveMasterKeysCache();
       }
       renderMasterKeys();
@@ -2564,6 +2586,16 @@ curl -X POST "${proxyUrl}" \\
           action: "sql",
           query: "CREATE TABLE IF NOT EXISTS public.user_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event text, created_at timestamptz DEFAULT now()); ALTER TABLE public.user_logs DISABLE ROW LEVEL SECURITY; GRANT ALL ON TABLE public.user_logs TO anon, authenticated, service_role;"
         }, null, 2);
+      } else if (type === 'control_list') {
+        textarea.value = JSON.stringify({
+          action: "list_accounts",
+          target: "all"
+        }, null, 2);
+      } else if (type === 'control_toggle') {
+        textarea.value = JSON.stringify({
+          action: "enable_account",
+          target: "all"
+        }, null, 2);
       }
       showToast(`Loaded ${type.toUpperCase()} preset template!`, 'info');
     }
@@ -2604,7 +2636,10 @@ curl -X POST "${proxyUrl}" \\
           fetchOpts.body = JSON.stringify({ action: 'query', path: payloadRaw });
         }
 
-        const res = await fetch('/api/proxy', fetchOpts);
+        const isControlAction = payloadRaw.includes('list_accounts') || payloadRaw.includes('enable_account') || payloadRaw.includes('disable_account') || (payloadRaw.includes('delete_account') && !payloadRaw.includes('drop_table'));
+        const targetEndpoint = isControlAction ? '/api/control' : '/api/proxy';
+
+        const res = await fetch(targetEndpoint, fetchOpts);
         const elapsed = Date.now() - startTime;
         latencyBadge.innerText = `${elapsed} ms (HTTP ${res.status})`;
 

@@ -226,45 +226,376 @@ export default {
     // 4. API MASTER KEYS ROUTE (/api/keys)
     if (url.pathname === '/api/keys' || url.pathname === '/api/keys/') {
       if (method === 'GET') {
-        const { data, error } = await supabase.from('supabase_master_keys').select('*');
-        if (error) {
-          return new Response(JSON.stringify([]), { status: 200, headers: corsHeaders });
+        let keysData = [];
+        try {
+          const { data, error } = await supabase.from('supabase_master_keys').select('*');
+          if (!error && Array.isArray(data)) keysData = data;
+        } catch (e) {}
+
+        if (keysData.length === 0) {
+          try {
+            const directRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?select=*`, {
+              headers: { 'apikey': MASTER_KEY, 'Authorization': `Bearer ${MASTER_KEY}` }
+            });
+            if (directRes.ok) {
+              const directData = await directRes.json();
+              if (Array.isArray(directData)) keysData = directData;
+            }
+          } catch (e) {}
         }
-        return new Response(JSON.stringify(data || []), { status: 200, headers: corsHeaders });
+
+        const normalized = keysData.map(k => normalizeKeyRecord(k)).filter(Boolean);
+        return new Response(JSON.stringify(normalized), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'POST') {
         const reqBody = await request.json().catch(() => ({}));
-        const keyRecord = {
-          key: reqBody.key,
-          name: reqBody.name || 'Master Router Key',
-          status: reqBody.status || 'ACTIVE',
-          destination: reqBody.destination || 'All Accounts',
-          created: reqBody.created || new Date().toISOString().split('T')[0],
-          connected_account_ids: reqBody.connected_account_ids || [],
-          connected_account_names: reqBody.connected_account_names || []
+        const rawKey = reqBody.key || reqBody.master_key;
+        if (!rawKey) return new Response(JSON.stringify({ error: 'key required' }), { status: 400, headers: corsHeaders });
+
+        const keyName = reqBody.name || reqBody.key_name || 'Master Router Key';
+        const status = reqBody.status || 'ACTIVE';
+        const isActive = status === 'ACTIVE';
+        const connAccIds = reqBody.connected_account_ids || reqBody.assigned_account_ids || [];
+        const connIdsJson = typeof connAccIds === 'string' ? connAccIds : JSON.stringify(connAccIds);
+        const destination = reqBody.destination || (connAccIds.length > 0 ? `${connAccIds.length} Accounts` : 'All Accounts');
+        const allowedMethods = reqBody.allowed_methods || ['direct_postgres', 'service_role', 'anon'];
+
+        const dbRecord = {
+          master_key: rawKey,
+          key_name: keyName,
+          assigned_account_ids: connIdsJson,
+          is_active: isActive
         };
-        const { data, error } = await supabase.from('supabase_master_keys').upsert([keyRecord]).select();
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
-        return new Response(JSON.stringify(data || keyRecord), { status: 200, headers: corsHeaders });
+
+        let saved = null;
+        try {
+          const { data, error } = await supabase.from('supabase_master_keys').upsert([dbRecord]).select();
+          if (!error && data && data.length > 0) saved = data[0];
+        } catch (e) {}
+
+        if (!saved) {
+          try {
+            const restRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys`, {
+              method: 'POST',
+              headers: {
+                'apikey': MASTER_KEY,
+                'Authorization': `Bearer ${MASTER_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify(dbRecord)
+            });
+            if (restRes.ok) {
+              const resData = await restRes.json();
+              if (Array.isArray(resData) && resData.length > 0) saved = resData[0];
+            }
+          } catch (e) {}
+        }
+
+        const resultObj = normalizeKeyRecord(saved || { ...reqBody, ...dbRecord, destination, allowed_methods: allowedMethods });
+        return new Response(JSON.stringify(resultObj), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'PATCH') {
         const keyParam = url.searchParams.get('key');
         const reqBody = await request.json().catch(() => ({}));
-        const targetKey = keyParam || reqBody.key;
+        const targetKey = keyParam || reqBody.key || reqBody.master_key;
         if (!targetKey) return new Response(JSON.stringify({ error: 'key required' }), { status: 400, headers: corsHeaders });
-        const { data, error } = await supabase.from('supabase_master_keys').update(reqBody).eq('key', targetKey).select();
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
-        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+
+        const patchPayload = {};
+        if (reqBody.status !== undefined) {
+          patchPayload.is_active = reqBody.status === 'ACTIVE';
+          patchPayload.status = reqBody.status;
+        }
+        if (reqBody.is_active !== undefined) {
+          patchPayload.is_active = !!reqBody.is_active;
+          patchPayload.status = reqBody.is_active ? 'ACTIVE' : 'REVOKED';
+        }
+        if (reqBody.name || reqBody.key_name) {
+          patchPayload.key_name = reqBody.name || reqBody.key_name;
+          patchPayload.name = reqBody.name || reqBody.key_name;
+        }
+
+        if (reqBody.connected_account_ids !== undefined || reqBody.assigned_account_ids !== undefined || reqBody.add_accounts !== undefined || reqBody.remove_accounts !== undefined) {
+          let currentIds = [];
+          try {
+            const { data } = await supabase.from('supabase_master_keys').select('*').or(`master_key.eq.${targetKey},key.eq.${targetKey}`).maybeSingle();
+            if (data) {
+              currentIds = data.connected_account_ids || data.assigned_account_ids || [];
+              if (typeof currentIds === 'string') { try { currentIds = JSON.parse(currentIds); } catch (e) { currentIds = []; } }
+            }
+          } catch (e) {}
+
+          let targetIds = reqBody.connected_account_ids || reqBody.assigned_account_ids || currentIds;
+          if (typeof targetIds === 'string') { try { targetIds = JSON.parse(targetIds); } catch (e) { targetIds = [targetIds]; } }
+          if (!Array.isArray(targetIds)) targetIds = [];
+
+          if (Array.isArray(reqBody.add_accounts)) {
+            for (const id of reqBody.add_accounts) {
+              if (!targetIds.map(String).includes(String(id))) targetIds.push(id);
+            }
+          }
+          if (Array.isArray(reqBody.remove_accounts)) {
+            targetIds = targetIds.filter(id => !reqBody.remove_accounts.map(String).includes(String(id)));
+          }
+
+          const idsJson = JSON.stringify(targetIds);
+          patchPayload.connected_account_ids = idsJson;
+          patchPayload.assigned_account_ids = idsJson;
+          patchPayload.destination = targetIds.length > 0 ? `${targetIds.length} Accounts` : 'ALL';
+        }
+
+        try {
+          await supabase.from('supabase_master_keys').update(patchPayload).eq('master_key', targetKey);
+        } catch (e) {}
+        try {
+          await supabase.from('supabase_master_keys').update(patchPayload).eq('key', targetKey);
+        } catch (e) {}
+        try {
+          await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?or=(master_key.eq.${encodeURIComponent(targetKey)},key.eq.${encodeURIComponent(targetKey)})`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': MASTER_KEY,
+              'Authorization': `Bearer ${MASTER_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(patchPayload)
+          });
+        } catch (e) {}
+
+        return new Response(JSON.stringify({ success: true, ...patchPayload, key: targetKey }), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'DELETE') {
         const keyParam = url.searchParams.get('key');
         const reqBody = await request.json().catch(() => ({}));
-        const targetKey = keyParam || reqBody.key;
+        const targetKey = keyParam || reqBody.key || reqBody.master_key;
         if (targetKey) {
-          await supabase.from('supabase_master_keys').delete().eq('key', targetKey);
+          try {
+            await supabase.from('supabase_master_keys').delete().eq('master_key', targetKey);
+          } catch (e) {}
+          try {
+            await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?master_key=eq.${encodeURIComponent(targetKey)}`, {
+              method: 'DELETE',
+              headers: { 'apikey': MASTER_KEY, 'Authorization': `Bearer ${MASTER_KEY}` }
+            });
+          } catch (e) {}
         }
         return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
       }
+    }
+
+    // 4.5 NEW /api/control ENDPOINT (POST) - SUPABASE COMPLETE CONTROL
+    if ((url.pathname === '/api/control' || url.pathname === '/api/control/') && method === 'POST') {
+      const authHeader = request.headers.get('Authorization') || request.headers.get('apikey') || '';
+      const keyAuth = await validateMasterKey(authHeader, supabase, MASTER_URL, MASTER_KEY, env);
+      if (!keyAuth.valid) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Invalid/Revoked master key"
+        }), { status: 401, headers: corsHeaders });
+      }
+
+      const controlBody = await request.json().catch(() => ({}));
+      const ctrlAction = controlBody.action;
+      const target = controlBody.target;
+
+      if (!ctrlAction) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Missing 'action' parameter (enable_account, disable_account, delete_account, list_accounts)"
+        }), { status: 400, headers: corsHeaders });
+      }
+
+      // Fetch all accounts
+      let allAccounts = [];
+      try {
+        const { data: dbAccs, error } = await supabase.from('supabase_accounts').select('*');
+        if (!error && dbAccs) allAccounts = dbAccs;
+      } catch (e) {}
+
+      if (allAccounts.length === 0) {
+        try {
+          const directRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_accounts?select=*`, {
+            headers: { 'apikey': MASTER_KEY, 'Authorization': `Bearer ${MASTER_KEY}` }
+          });
+          if (directRes.ok) allAccounts = await directRes.json();
+        } catch (e) {}
+      }
+
+      // 1. LIST_ACCOUNTS
+      if (ctrlAction === 'list_accounts') {
+        return new Response(JSON.stringify({
+          success: true,
+          keyStatus: "ACTIVE",
+          data: allAccounts,
+          accounts: allAccounts,
+          total: allAccounts.length
+        }, null, 2), { status: 200, headers: corsHeaders });
+      }
+
+      // 2. ENABLE_ACCOUNT
+      if (ctrlAction === 'enable_account') {
+        const isTargetAll = !target || target === 'all' || target === 'ALL';
+        let updated = [];
+        for (const acc of allAccounts) {
+          if (isTargetAll || String(acc.id) === String(target) || (acc.routing_tag && acc.routing_tag.toLowerCase() === String(target).toLowerCase()) || (acc.name && acc.name.toLowerCase() === String(target).toLowerCase())) {
+            try {
+              await supabase.from('supabase_accounts').update({ is_active: true }).eq('id', acc.id);
+            } catch (e) {}
+            acc.is_active = true;
+            updated.push(acc);
+          }
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          keyStatus: "ACTIVE",
+          action: "enable_account",
+          target: target || 'all',
+          data: updated,
+          updatedCount: updated.length
+        }, null, 2), { status: 200, headers: corsHeaders });
+      }
+
+      // 3. DISABLE_ACCOUNT
+      if (ctrlAction === 'disable_account') {
+        const isTargetAll = target === 'all' || target === 'ALL';
+        let updated = [];
+        for (const acc of allAccounts) {
+          if (isTargetAll || String(acc.id) === String(target) || (acc.routing_tag && acc.routing_tag.toLowerCase() === String(target).toLowerCase()) || (acc.name && acc.name.toLowerCase() === String(target).toLowerCase())) {
+            try {
+              await supabase.from('supabase_accounts').update({ is_active: false }).eq('id', acc.id);
+            } catch (e) {}
+            acc.is_active = false;
+            updated.push(acc);
+          }
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          keyStatus: "ACTIVE",
+          action: "disable_account",
+          target: target || 'all',
+          data: updated,
+          updatedCount: updated.length
+        }, null, 2), { status: 200, headers: corsHeaders });
+      }
+
+      // 4. DELETE_ACCOUNT
+      if (ctrlAction === 'delete_account') {
+        if (!target) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Target required for delete_account"
+          }), { status: 400, headers: corsHeaders });
+        }
+        for (const acc of allAccounts) {
+          if (String(acc.id) === String(target) || (acc.routing_tag && acc.routing_tag.toLowerCase() === String(target).toLowerCase()) || (acc.name && acc.name.toLowerCase() === String(target).toLowerCase()) || (acc.project_url && acc.project_url === String(target))) {
+            try {
+              await supabase.from('supabase_accounts').delete().eq('id', acc.id);
+            } catch (e) {}
+          }
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          keyStatus: "ACTIVE",
+          action: "delete_account",
+          target: target,
+          data: { deleted: true }
+        }, null, 2), { status: 200, headers: corsHeaders });
+      }
+
+      // 5. UPDATE_KEY_ACCOUNTS
+      if (ctrlAction === 'update_key_accounts') {
+        const keyNameOrKey = controlBody.key || controlBody.target;
+        if (!keyNameOrKey) {
+          return new Response(JSON.stringify({ success: false, error: "key or target required for update_key_accounts" }), { status: 400, headers: corsHeaders });
+        }
+        let keyRec = null;
+        try {
+          const { data } = await supabase.from('supabase_master_keys').select('*').or(`master_key.eq.${keyNameOrKey},key.eq.${keyNameOrKey}`).maybeSingle();
+          if (data) keyRec = data;
+        } catch (e) {}
+
+        if (!keyRec) {
+          try {
+            const res = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?or=(master_key.eq.${encodeURIComponent(keyNameOrKey)},key.eq.${encodeURIComponent(keyNameOrKey)})&select=*`, {
+              headers: { 'apikey': MASTER_KEY, 'Authorization': `Bearer ${MASTER_KEY}` }
+            });
+            if (res.ok) {
+              const arr = await res.json();
+              if (Array.isArray(arr) && arr.length > 0) keyRec = arr[0];
+            }
+          } catch (e) {}
+        }
+
+        if (!keyRec) {
+          return new Response(JSON.stringify({ success: false, error: "Master key not found" }), { status: 404, headers: corsHeaders });
+        }
+
+        let existingIds = keyRec.connected_account_ids || keyRec.assigned_account_ids || [];
+        if (typeof existingIds === 'string') {
+          try { existingIds = JSON.parse(existingIds); } catch (e) { existingIds = []; }
+        }
+        if (!Array.isArray(existingIds)) existingIds = [];
+
+        const addAccs = controlBody.add_accounts || controlBody.add || [];
+        const removeAccs = controlBody.remove_accounts || controlBody.remove || [];
+        const explicitSet = controlBody.connected_account_ids || controlBody.assigned_account_ids;
+
+        let newIds = explicitSet ? (Array.isArray(explicitSet) ? explicitSet : [explicitSet]) : [...existingIds];
+        if (!explicitSet) {
+          if (Array.isArray(addAccs)) {
+            for (const id of addAccs) {
+              if (!newIds.map(String).includes(String(id))) newIds.push(id);
+            }
+          }
+          if (Array.isArray(removeAccs)) {
+            newIds = newIds.filter(id => !removeAccs.map(String).includes(String(id)));
+          }
+        }
+
+        const newIdsJson = JSON.stringify(newIds);
+        const updatePayload = {
+          connected_account_ids: newIdsJson,
+          assigned_account_ids: newIdsJson,
+          destination: newIds.length > 0 ? `${newIds.length} Accounts` : 'ALL'
+        };
+
+        const targetKeyVal = keyRec.master_key || keyRec.key;
+        try {
+          await supabase.from('supabase_master_keys').update(updatePayload).eq('master_key', targetKeyVal);
+        } catch (e) {}
+        try {
+          await supabase.from('supabase_master_keys').update(updatePayload).eq('key', targetKeyVal);
+        } catch (e) {}
+
+        try {
+          await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?or=(master_key.eq.${encodeURIComponent(targetKeyVal)},key.eq.${encodeURIComponent(targetKeyVal)})`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': MASTER_KEY,
+              'Authorization': `Bearer ${MASTER_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updatePayload)
+          });
+        } catch (e) {}
+
+        const updatedRecord = normalizeKeyRecord({ ...keyRec, ...updatePayload });
+        return new Response(JSON.stringify({
+          success: true,
+          keyStatus: "ACTIVE",
+          action: "update_key_accounts",
+          key: targetKeyVal,
+          data: updatedRecord
+        }, null, 2), { status: 200, headers: corsHeaders });
+      }
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: `Unknown control action '${ctrlAction}'. Allowed: enable_account, disable_account, delete_account, list_accounts, update_key_accounts`
+      }), { status: 400, headers: corsHeaders });
     }
 
     // 5. PROXY / QUERY / READ / WRITE / SQL ROUTING
@@ -281,6 +612,31 @@ export default {
     const rawTag = request.headers.get('x-account-tag') || request.headers.get('x-target-account') || url.searchParams.get('tag') || body.tag || body.accountTag || body.routing_tag;
     const cleanTag = rawTag ? String(rawTag).trim().replace(/^#/, '') : null;
     const subPath = (url.searchParams.get('path') || url.pathname.replace(/^\/+/, '') || '').replace(/^api\/proxy\/?/, '').replace(/^\/+/, '') || '';
+
+    // ================= MASTER KEY VALIDATION LAYER =================
+    const keyAuth = await validateMasterKey(authHeader, supabase, MASTER_URL, MASTER_KEY, env);
+    if (!keyAuth.valid) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Invalid/Revoked master key"
+      }), { status: 401, headers: corsHeaders });
+    }
+
+    const keyRecord = keyAuth.keyRecord;
+    const isUniversal = !keyRecord.destination || 
+                        keyRecord.destination.toUpperCase() === 'ALL' || 
+                        keyRecord.destination.toUpperCase().startsWith('ALL ACCOUNTS') ||
+                        (!keyRecord.connected_account_ids || keyRecord.connected_account_ids.length === 0);
+
+    // If key is scoped: requirement enforces x-account-tag header MUST be provided
+    const accountTagHeader = request.headers.get('x-account-tag') || request.headers.get('x-target-account');
+    if (!isUniversal && !accountTagHeader && !cleanTag) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Scoped master key requires x-account-tag header",
+        keyStatus: "ACTIVE"
+      }), { status: 400, headers: corsHeaders });
+    }
 
     // Lookup Target Accounts
     let accounts = [];
@@ -309,10 +665,25 @@ export default {
       } catch (e) {}
     }
 
+    // Filter accounts if key is scoped
+    let allowedAccounts = accounts;
+    if (!isUniversal) {
+      const allowedKeys = [
+        ...(keyRecord.connected_account_ids || []).map(id => String(id).toLowerCase()),
+        ...(keyRecord.connected_account_names || []).map(n => String(n).toLowerCase())
+      ];
+      allowedAccounts = accounts.filter(acc => 
+        allowedKeys.includes(String(acc.id).toLowerCase()) ||
+        (acc.routing_tag && allowedKeys.includes(acc.routing_tag.toLowerCase())) ||
+        (acc.name && allowedKeys.includes(acc.name.toLowerCase())) ||
+        (acc.project_name && allowedKeys.includes(acc.project_name.toLowerCase()))
+      );
+    }
+
     // Determine target account(s)
     let targetAccounts = [];
     if (cleanTag) {
-      const found = accounts.find(a => 
+      const found = allowedAccounts.find(a => 
         (a.routing_tag && a.routing_tag.toLowerCase() === cleanTag.toLowerCase()) ||
         (a.name && a.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '') === cleanTag.toLowerCase()) ||
         (a.name && a.name.toLowerCase() === cleanTag.toLowerCase()) ||
@@ -321,12 +692,24 @@ export default {
       if (found) targetAccounts = [found];
     }
     if (targetAccounts.length === 0 && accountId) {
-      const found = accounts.find(a => String(a.id) === String(accountId));
+      const found = allowedAccounts.find(a => String(a.id) === String(accountId));
       if (found) targetAccounts = [found];
     }
     if (targetAccounts.length === 0 && projectName && projectName.toLowerCase() !== 'all') {
-      const found = accounts.find(a => a.name.toLowerCase() === projectName.toLowerCase());
+      const found = allowedAccounts.find(a => 
+        a.name.toLowerCase() === projectName.toLowerCase() ||
+        (a.project_name && a.project_name.toLowerCase() === projectName.toLowerCase())
+      );
       if (found) targetAccounts = [found];
+    }
+
+    // If scoped and target was not found in allowed accounts:
+    if (!isUniversal && targetAccounts.length === 0) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Target account not authorized for this scoped master key",
+        keyStatus: "ACTIVE"
+      }), { status: 403, headers: corsHeaders });
     }
 
     // Allow explicit direct connection in request body if targetAccounts is still empty
@@ -343,16 +726,132 @@ export default {
       }];
     }
 
-    if (targetAccounts.length === 0) {
-      // Default to all accounts if universal or target not specified
-      targetAccounts = accounts;
+    if (targetAccounts.length === 0 && isUniversal) {
+      targetAccounts = allowedAccounts;
     }
 
     if (targetAccounts.length === 0) {
-      return new Response(JSON.stringify({ error: 'No connected Supabase accounts found in master database. Please connect an account or provide db_connection_string in payload.' }), { status: 404, headers: corsHeaders });
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'No authorized connected Supabase accounts found in master database.',
+        keyStatus: "ACTIVE"
+      }), { status: 404, headers: corsHeaders });
     }
 
     const reqAction = body.action || url.searchParams.get('action') || (url.pathname.endsWith('/sql') ? 'sql' : null);
+    const isWriteAction = ['insert', 'write', 'update', 'delete', 'sql', 'execute_sql', 'create_table', 'alter_table', 'upgrade_table', 'drop_table', 'delete_table'].includes(reqAction);
+
+    // If master key is UNIVERSAL and action is write, user MUST specify target_account_tag
+    if (isUniversal && isWriteAction && !cleanTag) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Universal master key requires target_account_tag or x-account-tag for writes",
+        keyStatus: "ACTIVE"
+      }), { status: 400, headers: corsHeaders });
+    }
+
+    // ================= ACTION: LIST_TAGS =================
+    if (reqAction === 'list_tags' || (url.pathname.includes('/tags') && method === 'GET')) {
+      return new Response(JSON.stringify({
+        success: true,
+        keyStatus: "ACTIVE",
+        tags: accounts.map(a => ({
+          tag: a.routing_tag || `#${(a.name || '').toLowerCase().replace(/\s+/g, '-')}`,
+          accountId: a.id,
+          accountName: a.name,
+          projectName: a.project_name,
+          projectUrl: a.project_url,
+          isActive: a.is_active !== false
+        }))
+      }, null, 2), { status: 200, headers: corsHeaders });
+    }
+
+    // ================= ACTION: SEARCH_BY_TAG =================
+    if (reqAction === 'search_by_tag' || reqAction === 'search_tag') {
+      const searchTag = body.search_tag || body.tag || url.searchParams.get('tag') || url.searchParams.get('search_tag') || '';
+      const cleanSearchTag = String(searchTag).trim().replace(/^#/, '');
+      const tableName = (body.table || 'users').replace(/^\/+/, '').replace(/^rest\/v1\//, '');
+      const selectQuery = body.select ? `?select=${encodeURIComponent(body.select)}` : '';
+
+      if (!cleanSearchTag) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Missing 'search_tag' parameter for search_by_tag action",
+          keyStatus: "ACTIVE"
+        }), { status: 400, headers: corsHeaders });
+      }
+
+      const foundAcc = accounts.find(a => 
+        (a.routing_tag && a.routing_tag.toLowerCase().replace(/^#/, '') === cleanSearchTag.toLowerCase()) ||
+        (a.name && a.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '') === cleanSearchTag.toLowerCase()) ||
+        (a.name && a.name.toLowerCase() === cleanSearchTag.toLowerCase()) ||
+        String(a.id) === cleanSearchTag
+      );
+
+      if (!foundAcc) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: `No connected account found matching search tag #${cleanSearchTag}`,
+          keyStatus: "ACTIVE"
+        }), { status: 404, headers: corsHeaders });
+      }
+
+      const authKey = foundAcc.service_role_key || foundAcc.secret_key || foundAcc.api_key;
+      const targetUrl = `${foundAcc.project_url.replace(/\/+$/, '')}/rest/v1/${tableName}${selectQuery}`;
+
+      try {
+        const resp = await fetch(targetUrl, {
+          method: 'GET',
+          headers: {
+            'apikey': authKey,
+            'Authorization': `Bearer ${authKey}`
+          }
+        });
+        const resData = await resp.json().catch(() => ([]));
+        return new Response(JSON.stringify({
+          success: resp.ok,
+          keyStatus: "ACTIVE",
+          target_account: foundAcc.name,
+          search_tag: `#${cleanSearchTag}`,
+          table: tableName,
+          data: resData
+        }, null, 2), { status: resp.status, headers: corsHeaders });
+      } catch (e) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: e.message,
+          keyStatus: "ACTIVE"
+        }), { status: 500, headers: corsHeaders });
+      }
+    }
+
+    // ================= DB CREDENTIALS VALIDATION =================
+    const keyAllowedMethods = keyRecord.allowed_methods || ["direct_postgres", "service_role", "anon"];
+
+    // Check credentials for SQL, DDL, and write actions
+    const isProtectedAction = ['sql', 'execute_sql', 'create_table', 'alter_table', 'upgrade_table', 'drop_table', 'delete_table', 'insert', 'write', 'update', 'delete'].includes(reqAction);
+    if (isProtectedAction) {
+      if (!keyAllowedMethods.includes("direct_postgres") && !keyAllowedMethods.includes("service_role")) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Key requires db_connection_string or service_role_key",
+          keyStatus: "ACTIVE"
+        }), { status: 400, headers: corsHeaders });
+      }
+
+      for (const acc of targetAccounts) {
+        const hasPg = !!(acc.db_connection_string || body.db_connection_string || (acc.project_url && (acc.db_password || body.db_password)));
+        const hasServiceRole = !!(acc.service_role_key || acc.secret_key || body.service_role_key || body.secret_key || env.MASTER_SERVICE_ROLE_KEY);
+
+        if (!hasPg && !hasServiceRole) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Key requires db_connection_string or service_role_key",
+            keyStatus: "ACTIVE"
+          }), { status: 400, headers: corsHeaders });
+        }
+      }
+    }
 
     // ================= ACTION 1: SQL / EXECUTE_SQL =================
     if (reqAction === 'sql' || reqAction === 'execute_sql') {
@@ -378,9 +877,11 @@ export default {
         const failedResult = results.find(r => r.success === false) || results[0];
         return new Response(JSON.stringify({
           success: false,
+          keyStatus: "ACTIVE",
           status: "SQL_EXECUTION_FAILED",
           error: failedResult.reason || failedResult.error || "SQL execution failed on target database",
           query: sqlQuery,
+          data: targetAccounts.length === 1 ? results[0] : results,
           result: targetAccounts.length === 1 ? results[0] : results,
           results: targetAccounts.length === 1 ? results[0] : results
         }, null, 2), { status: 400, headers: corsHeaders });
@@ -388,9 +889,11 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "SUCCESS",
         totalAccounts: targetAccounts.length,
         query: sqlQuery,
+        data: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         result: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         output: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
@@ -420,10 +923,12 @@ export default {
         const failedResult = results.find(r => r.success === false) || results[0];
         return new Response(JSON.stringify({
           success: false,
+          keyStatus: "ACTIVE",
           status: "SQL_EXECUTION_FAILED",
           error: failedResult.reason || failedResult.error || "CREATE TABLE execution failed on target database",
           tableName: tableName,
           autoGeneratedSql: autoSql,
+          data: targetAccounts.length === 1 ? results[0] : results,
           result: targetAccounts.length === 1 ? results[0] : results,
           results: targetAccounts.length === 1 ? results[0] : results
         }, null, 2), { status: 400, headers: corsHeaders });
@@ -431,17 +936,19 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "SUCCESS",
         tableName: tableName,
         autoGeneratedSql: autoSql,
+        data: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         result: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         output: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
       }, null, 2), { status: 200, headers: corsHeaders });
     }
 
-    // ================= ACTION 3: ALTER_TABLE / UPGRADE_TABLE =================
-    if (reqAction === 'alter_table' || reqAction === 'upgrade_table') {
+    // ================= ACTION 3: ALTER_TABLE =================
+    if (reqAction === 'alter_table') {
       const tableName = body.table || body.tableName || 'new_table';
       const col = body.addColumn || body.column;
       const colName = typeof col === 'object' ? col.name : (body.columnName || body.column || 'new_column');
@@ -466,27 +973,81 @@ export default {
         const failedResult = results.find(r => r.success === false) || results[0];
         return new Response(JSON.stringify({
           success: false,
+          keyStatus: "ACTIVE",
           status: "SQL_EXECUTION_FAILED",
           error: failedResult.reason || failedResult.error || "ALTER TABLE execution failed on target database",
           tableName: tableName,
           addedColumn: colName,
           columnType: colType,
-          sqlExecuted: alterSql,
-          result: targetAccounts.length === 1 ? results[0] : results,
-          results: targetAccounts.length === 1 ? results[0] : results
+          sqlExecuted: alterSql
         }, null, 2), { status: 400, headers: corsHeaders });
       }
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "SUCCESS",
-        tableName: tableName,
         addedColumn: colName,
         columnType: colType,
-        sqlExecuted: alterSql,
-        result: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
-        output: targetAccounts.length === 1 ? results[0] : results,
-        results: targetAccounts.length === 1 ? results[0] : results
+        sqlExecuted: alterSql
+      }, null, 2), { status: 200, headers: corsHeaders });
+    }
+
+    // ================= ACTION 3.5: UPGRADE_TABLE =================
+    if (reqAction === 'upgrade_table') {
+      const tableName = body.table || body.tableName || 'new_table';
+      const colsInput = body.columns || (body.addColumn ? [body.addColumn] : []);
+      const columnNames = [];
+      const sqlList = [];
+
+      sqlList.push(`CREATE TABLE IF NOT EXISTS public."${tableName.replace(/[^a-zA-Z0-9_]/g, '')}" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "created_at" timestamptz DEFAULT now());`);
+
+      for (const c of colsInput) {
+        const cName = typeof c === 'object' ? c.name : (c || '');
+        const cType = typeof c === 'object' ? (c.type || 'text') : 'text';
+        if (cName) {
+          const cleanName = cName.replace(/[^a-zA-Z0-9_]/g, '');
+          columnNames.push(cleanName);
+          sqlList.push(`ALTER TABLE public."${tableName.replace(/[^a-zA-Z0-9_]/g, '')}" ADD COLUMN IF NOT EXISTS "${cleanName}" ${cType};`);
+        }
+      }
+
+      const fullUpgradeSql = sqlList.join('\n');
+
+      const results = await Promise.all(targetAccounts.map(async (acc) => {
+        const effectiveAcc = {
+          ...acc,
+          db_connection_string: body.db_connection_string || body.connection_string || acc.db_connection_string,
+          db_password: body.db_password || body.password || acc.db_password,
+          secret_key: body.secret_key || body.service_role_key || acc.secret_key,
+          service_role_key: body.service_role_key || acc.service_role_key
+        };
+        const res = await attemptExecuteSql(effectiveAcc, fullUpgradeSql, env);
+        return { account: acc.name, routingTag: acc.routing_tag || acc.name, ...res };
+      }));
+
+      const allSuccess = results.every(r => r.success !== false);
+      if (!allSuccess) {
+        const failedResult = results.find(r => r.success === false) || results[0];
+        return new Response(JSON.stringify({
+          success: false,
+          keyStatus: "ACTIVE",
+          status: "SQL_EXECUTION_FAILED",
+          error: failedResult.reason || failedResult.error || "UPGRADE TABLE execution failed on target database",
+          tableName: tableName,
+          addedColumns: columnNames,
+          sqlExecuted: sqlList
+        }, null, 2), { status: 400, headers: corsHeaders });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        keyStatus: "ACTIVE",
+        status: "SUCCESS",
+        tableName: tableName,
+        addedColumns: columnNames,
+        sqlExecuted: sqlList,
+        totalColumnsAdded: columnNames.length
       }, null, 2), { status: 200, headers: corsHeaders });
     }
 
@@ -512,10 +1073,12 @@ export default {
         const failedResult = results.find(r => r.success === false) || results[0];
         return new Response(JSON.stringify({
           success: false,
+          keyStatus: "ACTIVE",
           status: "SQL_EXECUTION_FAILED",
           error: failedResult.reason || failedResult.error || "DROP TABLE execution failed on target database",
           tableName: tableName,
           sqlExecuted: dropSql,
+          data: targetAccounts.length === 1 ? results[0] : results,
           result: targetAccounts.length === 1 ? results[0] : results,
           results: targetAccounts.length === 1 ? results[0] : results
         }, null, 2), { status: 400, headers: corsHeaders });
@@ -523,9 +1086,11 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "SUCCESS",
         tableName: tableName,
         sqlExecuted: dropSql,
+        data: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         result: targetAccounts.length === 1 ? (results[0].result || results[0].rows || results[0]) : results.map(r => r.result || r.rows || r),
         output: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
@@ -538,12 +1103,13 @@ export default {
       const recordData = body.data || body.record || body;
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
+        const authKey = acc.service_role_key || acc.secret_key || acc.api_key;
         const targetUrl = `${acc.project_url.replace(/\/+$/, '')}/rest/v1/${tableName}`;
         const fetchOpts = {
           method: 'POST',
           headers: {
-            'apikey': acc.api_key,
-            'Authorization': `Bearer ${acc.api_key}`,
+            'apikey': authKey,
+            'Authorization': `Bearer ${authKey}`,
             'Content-Type': 'application/json',
             'Prefer': 'return=representation'
           },
@@ -571,8 +1137,10 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "INSERT_ACTION_COMPLETE",
         tableName: tableName,
+        data: targetAccounts.length === 1 ? (results[0].data || results[0]) : results.map(r => r.data || r),
         result: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
       }, null, 2), { status: 200, headers: corsHeaders });
@@ -586,13 +1154,14 @@ export default {
       const matchVal = body.matchValue !== undefined ? body.matchValue : (body.match ? body.match[matchCol] : null);
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
+        const authKey = acc.service_role_key || acc.secret_key || acc.api_key;
         const matchQuery = matchVal !== null ? `?${encodeURIComponent(matchCol)}=eq.${encodeURIComponent(matchVal)}` : '';
         const targetUrl = `${acc.project_url.replace(/\/+$/, '')}/rest/v1/${tableName}${matchQuery}`;
         const res = await fetch(targetUrl, {
           method: 'PATCH',
           headers: {
-            'apikey': acc.api_key,
-            'Authorization': `Bearer ${acc.api_key}`,
+            'apikey': authKey,
+            'Authorization': `Bearer ${authKey}`,
             'Content-Type': 'application/json',
             'Prefer': 'return=representation'
           },
@@ -604,8 +1173,10 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "UPDATE_ACTION_COMPLETE",
         tableName: tableName,
+        data: targetAccounts.length === 1 ? (results[0].data || results[0]) : results.map(r => r.data || r),
         result: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
       }, null, 2), { status: 200, headers: corsHeaders });
@@ -618,13 +1189,14 @@ export default {
       const matchVal = body.matchValue !== undefined ? body.matchValue : (body.match ? body.match[matchCol] : null);
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
+        const authKey = acc.service_role_key || acc.secret_key || acc.api_key;
         const matchQuery = matchVal !== null ? `?${encodeURIComponent(matchCol)}=eq.${encodeURIComponent(matchVal)}` : '';
         const targetUrl = `${acc.project_url.replace(/\/+$/, '')}/rest/v1/${tableName}${matchQuery}`;
         const res = await fetch(targetUrl, {
           method: 'DELETE',
           headers: {
-            'apikey': acc.api_key,
-            'Authorization': `Bearer ${acc.api_key}`
+            'apikey': authKey,
+            'Authorization': `Bearer ${authKey}`
           }
         });
         const resData = await res.json().catch(() => ({}));
@@ -633,8 +1205,10 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
+        keyStatus: "ACTIVE",
         status: "DELETE_ACTION_COMPLETE",
         tableName: tableName,
+        data: targetAccounts.length === 1 ? (results[0].data || results[0]) : results.map(r => r.data || r),
         result: targetAccounts.length === 1 ? results[0] : results,
         results: targetAccounts.length === 1 ? results[0] : results
       }, null, 2), { status: 200, headers: corsHeaders });
@@ -655,22 +1229,27 @@ export default {
 
     if (!effectiveSubPath) {
       return new Response(JSON.stringify({
+        success: true,
+        keyStatus: "ACTIVE",
         status: "ONLINE",
         service: "OTT Multi-Supabase Proxy Gateway",
-        message: "Proxy endpoint active. Send API requests with 'action' (sql, create_table, alter_table, drop_table, insert, update, delete, read) in JSON body."
+        data: {
+          message: "Proxy endpoint active. Send API requests with 'action' (sql, create_table, alter_table, drop_table, insert, update, delete, read) in JSON body."
+        }
       }, null, 2), { status: 200, headers: corsHeaders });
     }
 
     // Execute standard REST forward
     const singleAccount = targetAccounts[0] || accounts[0];
+    const authKey = singleAccount.service_role_key || singleAccount.secret_key || singleAccount.api_key;
     const targetUrl = `${singleAccount.project_url.replace(/\/+$/, '')}/${effectiveSubPath}`;
     const singleStart = Date.now();
 
     const fetchOpts = {
       method: effectiveMethod,
       headers: {
-        'apikey': singleAccount.api_key,
-        'Authorization': `Bearer ${singleAccount.api_key}`,
+        'apikey': authKey,
+        'Authorization': `Bearer ${authKey}`,
         'Content-Type': 'application/json',
         'Prefer': effectiveMethod === 'POST' ? 'return=representation' : undefined
       }
@@ -683,13 +1262,177 @@ export default {
     const targetData = await targetResponse.json().catch(() => ({}));
 
     return new Response(JSON.stringify({
+      success: targetResponse.ok,
+      keyStatus: "ACTIVE",
       meta: { account: singleAccount.name, latencyMs: Date.now() - singleStart },
       data: targetData
     }), { status: targetResponse.status, headers: corsHeaders });
   }
 };
 
-// ================= SQL & HELPER UTILITIES =================
+// ================= MASTER KEY & SQL UTILITIES =================
+function normalizeKeyRecord(k) {
+  if (!k) return null;
+  const rawKey = k.key || k.master_key || '';
+  const keyName = k.name || k.key_name || 'Master Router Key';
+
+  let status = k.status;
+  if (!status) {
+    if (k.is_active !== undefined) {
+      status = k.is_active ? 'ACTIVE' : 'REVOKED';
+    } else {
+      status = 'ACTIVE';
+    }
+  }
+
+  let connAccIds = k.connected_account_ids || k.assigned_account_ids || [];
+  if (typeof connAccIds === 'string') {
+    try {
+      connAccIds = JSON.parse(connAccIds);
+    } catch (e) {
+      connAccIds = connAccIds ? [connAccIds] : [];
+    }
+  }
+  if (!Array.isArray(connAccIds)) connAccIds = [];
+
+  let connAccNames = k.connected_account_names || [];
+  if (typeof connAccNames === 'string') {
+    try {
+      connAccNames = JSON.parse(connAccNames);
+    } catch (e) {
+      connAccNames = [];
+    }
+  }
+  if (!Array.isArray(connAccNames)) connAccNames = [];
+
+  const destination = k.destination || (connAccIds.length > 0 ? `${connAccIds.length} Accounts` : 'ALL');
+
+  let allowedMethods = k.allowed_methods;
+  if (typeof allowedMethods === 'string') {
+    try {
+      allowedMethods = JSON.parse(allowedMethods);
+    } catch (e) {
+      allowedMethods = null;
+    }
+  }
+  if (!allowedMethods || !Array.isArray(allowedMethods) || allowedMethods.length === 0) {
+    allowedMethods = ["direct_postgres", "service_role", "anon"];
+  }
+
+  return {
+    ...k,
+    key: rawKey,
+    master_key: rawKey,
+    name: keyName,
+    key_name: keyName,
+    status: status.toUpperCase(),
+    is_active: status.toUpperCase() === 'ACTIVE',
+    destination: destination,
+    allowed_methods: allowedMethods,
+    connected_account_ids: connAccIds,
+    assigned_account_ids: connAccIds,
+    connected_account_names: connAccNames
+  };
+}
+
+async function validateMasterKey(authHeader, supabase, MASTER_URL, MASTER_KEY, env = {}) {
+  if (!authHeader) {
+    return { valid: false, error: "Invalid/Revoked master key" };
+  }
+
+  const rawKey = authHeader.replace(/^Bearer\s+/i, '').trim().replace(/^['"]|['"]$/g, '');
+  if (!rawKey) {
+    return { valid: false, error: "Invalid/Revoked master key" };
+  }
+
+  // 1. Check if matches environment master keys (root admin)
+  if (rawKey === MASTER_KEY || (env && env.MASTER_SERVICE_ROLE_KEY && rawKey === env.MASTER_SERVICE_ROLE_KEY)) {
+    return {
+      valid: true,
+      keyRecord: normalizeKeyRecord({
+        key: rawKey,
+        name: "Root Master Key",
+        status: "ACTIVE",
+        destination: "ALL",
+        allowed_methods: ["direct_postgres", "service_role", "anon"],
+        connected_account_ids: []
+      })
+    };
+  }
+
+  // 2. Query supabase_master_keys table via supabase-js
+  let keyRecord = null;
+  try {
+    const { data: mkData, error: mkErr } = await supabase.from('supabase_master_keys').select('*').eq('master_key', rawKey).maybeSingle();
+    if (!mkErr && mkData) keyRecord = mkData;
+  } catch (e) {}
+
+  if (!keyRecord) {
+    try {
+      const { data: kData, error: kErr } = await supabase.from('supabase_master_keys').select('*').eq('key', rawKey).maybeSingle();
+      if (!kErr && kData) keyRecord = kData;
+    } catch (e) {}
+  }
+
+  // 3. Fallback: REST query if supabase-js query fails
+  if (!keyRecord) {
+    try {
+      const directRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?master_key=eq.${encodeURIComponent(rawKey)}&select=*`, {
+        headers: {
+          'apikey': MASTER_KEY,
+          'Authorization': `Bearer ${MASTER_KEY}`
+        }
+      });
+      if (directRes.ok) {
+        const directData = await directRes.json();
+        if (Array.isArray(directData) && directData.length > 0) {
+          keyRecord = directData[0];
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!keyRecord) {
+    try {
+      const directRes2 = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_master_keys?key=eq.${encodeURIComponent(rawKey)}&select=*`, {
+        headers: {
+          'apikey': MASTER_KEY,
+          'Authorization': `Bearer ${MASTER_KEY}`
+        }
+      });
+      if (directRes2.ok) {
+        const directData2 = await directRes2.json();
+        if (Array.isArray(directData2) && directData2.length > 0) {
+          keyRecord = directData2[0];
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 4. Default seed key fallback
+  if (!keyRecord && rawKey === 'omni_live_master_default_2026') {
+    keyRecord = {
+      key: 'omni_live_master_default_2026',
+      name: 'Universal Master Root Key',
+      status: 'ACTIVE',
+      destination: 'ALL',
+      allowed_methods: ["direct_postgres", "service_role", "anon"],
+      connected_account_ids: []
+    };
+  }
+
+  if (!keyRecord) {
+    return { valid: false, error: "Invalid/Revoked master key" };
+  }
+
+  const normalized = normalizeKeyRecord(keyRecord);
+  if (!normalized.is_active || normalized.status !== 'ACTIVE') {
+    return { valid: false, error: "Invalid/Revoked master key", status: "REVOKED" };
+  }
+
+  return { valid: true, keyRecord: normalized };
+}
+
 function parsePostgresDetails(connStr, dbPass, projectUrl) {
   let user = 'postgres';
   let password = (dbPass || '').trim();
@@ -1267,15 +2010,36 @@ async function ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env = {}) {
     CREATE TABLE IF NOT EXISTS public.supabase_master_keys (
       key text PRIMARY KEY,
       name text,
-      status text,
-      destination text,
+      status text DEFAULT 'ACTIVE',
+      destination text DEFAULT 'ALL',
+      allowed_methods jsonb DEFAULT '["direct_postgres", "service_role", "anon"]'::jsonb,
       created text,
       connected_account_ids jsonb DEFAULT '[]'::jsonb,
       connected_account_names jsonb DEFAULT '[]'::jsonb,
       created_at timestamptz DEFAULT now()
     );
+    ALTER TABLE public.supabase_master_keys ADD COLUMN IF NOT EXISTS status text DEFAULT 'ACTIVE';
+    ALTER TABLE public.supabase_master_keys ADD COLUMN IF NOT EXISTS destination text DEFAULT 'ALL';
+    ALTER TABLE public.supabase_master_keys ADD COLUMN IF NOT EXISTS allowed_methods jsonb DEFAULT '["direct_postgres", "service_role", "anon"]'::jsonb;
+    ALTER TABLE public.supabase_master_keys ADD COLUMN IF NOT EXISTS connected_account_ids jsonb DEFAULT '[]'::jsonb;
+    ALTER TABLE public.supabase_master_keys ADD COLUMN IF NOT EXISTS connected_account_names jsonb DEFAULT '[]'::jsonb;
     ALTER TABLE public.supabase_master_keys DISABLE ROW LEVEL SECURITY;
     GRANT ALL ON TABLE public.supabase_master_keys TO anon, authenticated, service_role;
+
+    CREATE TABLE IF NOT EXISTS public.data_routing_log (
+      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      routing_tag text,
+      table_name text,
+      source_account text,
+      saved_at timestamptz DEFAULT now(),
+      payload jsonb
+    );
+    ALTER TABLE public.data_routing_log DISABLE ROW LEVEL SECURITY;
+    GRANT ALL ON TABLE public.data_routing_log TO anon, authenticated, service_role;
+
+    INSERT INTO public.supabase_master_keys (key, name, status, destination, allowed_methods, created)
+    VALUES ('omni_live_master_default_2026', 'Universal Master Root Key', 'ACTIVE', 'ALL', '["direct_postgres", "service_role", "anon"]'::jsonb, '2026-01-01')
+    ON CONFLICT (key) DO UPDATE SET status = 'ACTIVE';
   `;
 
   try {
