@@ -984,6 +984,75 @@ System reads/writes directly to that account without scanning others!
         refreshMasterKeys()
     }
 
+    fun executeMasterAction(
+        action: String,
+        table: String? = null,
+        dataJson: String? = null,
+        querySql: String? = null,
+        matchCol: String? = null,
+        matchVal: String? = null,
+        targetAccountTag: String? = null,
+        onResult: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val payload = JSONObject().apply {
+                    put("action", action)
+                    if (!table.isNullOrBlank()) put("table", table)
+                    if (!querySql.isNullOrBlank()) put("query", querySql)
+                    if (!dataJson.isNullOrBlank()) {
+                        try {
+                            if (dataJson.trim().startsWith("[")) {
+                                put("data", JSONArray(dataJson))
+                            } else {
+                                put("data", JSONObject(dataJson))
+                            }
+                        } catch (e: Exception) {
+                            put("data", dataJson)
+                        }
+                    }
+                    if (!matchCol.isNullOrBlank() && !matchVal.isNullOrBlank()) {
+                        put("matchColumn", matchCol)
+                        put("matchValue", matchVal)
+                    }
+                }
+
+                val activeKeyObj = _masterKeys.value.firstOrNull { it.status == "ACTIVE" }
+                val masterKey = activeKeyObj?.key ?: AppConstants.MASTER_KEY
+                val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                val reqBody = payload.toString().toRequestBody(mediaType)
+
+                val reqBuilder = Request.Builder()
+                    .url(AppConstants.PROXY_URL)
+                    .addHeader("Authorization", "Bearer $masterKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(reqBody)
+
+                if (!targetAccountTag.isNullOrBlank() && targetAccountTag.lowercase() != "all") {
+                    reqBuilder.addHeader("x-target-account", targetAccountTag.removePrefix("#"))
+                } else {
+                    reqBuilder.addHeader("x-project-name", "all")
+                }
+
+                httpClient.newCall(reqBuilder.build()).execute().use { response ->
+                    val bodyStr = response.body?.string() ?: "{}"
+                    val formatted = try {
+                        if (bodyStr.trim().startsWith("[")) JSONArray(bodyStr).toString(2)
+                        else JSONObject(bodyStr).toString(2)
+                    } catch (e: Exception) { bodyStr }
+
+                    withContext(Dispatchers.Main) {
+                        onResult(formatted)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult("Error: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun resetTestStatus() {
         _testStatus.value = TestStatus.Idle
     }
