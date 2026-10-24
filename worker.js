@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import htmlContent from './index.html';
 
 export default {
   async fetch(request, env, ctx) {
@@ -24,6 +25,17 @@ export default {
       'Content-Type': 'application/json'
     };
 
+    // Serve HTML dashboard frontend at root '/'
+    if (url.pathname === '/' || url.pathname === '') {
+      return new Response(htmlContent, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html;charset=UTF-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+
     let supabase;
     try {
       supabase = createClient(MASTER_URL, MASTER_KEY);
@@ -32,21 +44,6 @@ export default {
     }
 
     const action = url.searchParams.get('action');
-
-    // Root Welcome Status
-    if (url.pathname === '/' && !action && !request.headers.get('Authorization') && !request.headers.get('x-target-account') && !request.headers.get('x-project-name')) {
-      return new Response(JSON.stringify({
-        status: "ONLINE",
-        service: "OTT Multi-Supabase Proxy Gateway (Cloudflare Worker)",
-        version: "2.6.0",
-        message: "Gateway is active and healthy.",
-        endpoints: {
-          diagnose: "/?action=diagnose&url=<supabase_url>&key=<api_key>",
-          ping: "/?action=ping",
-          proxyQuery: "POST / with Authorization: Bearer <master_key>"
-        }
-      }, null, 2), { status: 200, headers: corsHeaders });
-    }
 
     // 1. DIAGNOSE ACTION
     if (action === 'diagnose' || action === 'test') {
@@ -147,7 +144,7 @@ export default {
       return new Response(JSON.stringify({
         status: "ONLINE",
         service: "OTT Multi-Supabase Proxy Gateway",
-        message: "Proxy ready. Please specify a table path or action (e.g. table in action payload)."
+        message: "Proxy endpoint active. Send API requests here."
       }, null, 2), { status: 200, headers: corsHeaders });
     }
 
@@ -229,7 +226,7 @@ export default {
         targetAccount = accounts.find(a => String(a.id) === String(accountId));
       }
       if (!targetAccount && projectName && projectName.toLowerCase() !== 'all') {
-        targetAccount = accounts.find(a => a.name.toLowerCase() === projectName.toLowerCase());
+        targetAccount = accounts.find(a => name.toLowerCase() === projectName.toLowerCase());
       }
 
       if (!targetAccount) {

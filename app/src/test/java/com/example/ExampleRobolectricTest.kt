@@ -166,7 +166,7 @@ class ExampleRobolectricTest {
     // 3. Test Full Integration Copy text generation
     val integrationGuide = vm.buildFullMasterKeyIntegrationText(targetedKey!!, vm.accounts.value)
     assertTrue("Guide must contain key token", integrationGuide.contains(targetedKey!!.key))
-    assertTrue("Guide must contain proxy URL", integrationGuide.contains("proxproject.vercel.app"))
+    assertTrue("Guide must contain proxy URL", integrationGuide.contains("workers.dev"))
     assertTrue("Guide must mention direct string tag", integrationGuide.contains("x-target-account"))
 
     // Verify persistence in StateFlow
