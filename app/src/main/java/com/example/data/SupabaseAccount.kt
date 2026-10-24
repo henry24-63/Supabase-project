@@ -9,12 +9,24 @@ data class SupabaseAccount(
     val name: String,
     val projectUrl: String,
     val apiKey: String,
+    @param:Json(name = "publishable_key")
+    val publishableKey: String = "",
+    @param:Json(name = "secret_key")
+    val secretKey: String = "",
+    @param:Json(name = "service_role_key")
+    val serviceRoleKey: String = "",
     val databasePassword: String,
     @param:Json(name = "routing_tag")
     val routingTag: String = "",
     @param:Json(name = "is_active")
     val isActive: Boolean = true
 ) {
+    val effectiveSecretKey: String
+        get() = secretKey.ifBlank { serviceRoleKey.ifBlank { apiKey } }
+
+    val effectivePublishableKey: String
+        get() = publishableKey.ifBlank { apiKey }
+
     val effectiveTag: String
         get() {
             val raw = if (routingTag.isNotBlank()) routingTag else name

@@ -1254,6 +1254,8 @@ fun AddAccountScreen(
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var key by remember { mutableStateOf("") }
+    var publishableKey by remember { mutableStateOf("") }
+    var secretKey by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var routingTag by remember { mutableStateOf("") }
     var showHelp by remember { mutableStateOf(false) }
@@ -1321,8 +1323,8 @@ fun AddAccountScreen(
                             text = "1. Open supabase.com and go to your Project.\n" +
                                    "2. Navigate to Project Settings ⚙️ -> API.\n" +
                                    "3. Project URL: Copy the URL (e.g. https://xyz.supabase.co)\n" +
-                                   "4. Project API Keys: Copy the 'anon public' key or 'publishable' key (starts with sb_publishable_... or eyJhbGciOi...).\n" +
-                                   "5. Note: Both HTTP and HTTPS URLs are accepted and automatically tested.",
+                                   "4. Publishable Key: Copy 'sb_publishable_...' or 'anon public' key.\n" +
+                                   "5. Secret Key: Copy 'sb_secret_...' or 'service_role' key for SQL management.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray,
                             lineHeight = 20.sp
@@ -1353,7 +1355,7 @@ fun AddAccountScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Paste your raw text from Supabase CLI or project dashboard (with project URL, publishable key, password). The detector extracts fields automatically.",
+                        text = "Paste your raw text from Supabase CLI or project dashboard (with project URL, publishable key, secret key, password). The detector extracts fields automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.LightGray
                     )
@@ -1379,7 +1381,6 @@ fun AddAccountScreen(
                     Button(
                         onClick = {
                             if (rawData.isNotBlank()) {
-                                // Smart regex parser
                                 val dashMatch = Regex("supabase\\.com/dashboard/project/([a-zA-Z0-9_-]+)", RegexOption.IGNORE_CASE).find(rawData)
                                 val urlMatch = Regex("https?://[a-zA-Z0-9.-]+\\.supabase\\.co", RegexOption.IGNORE_CASE).find(rawData)
                                 val pubKeyMatch = Regex("sb_publishable_[a-zA-Z0-9_-]+", RegexOption.IGNORE_CASE).find(rawData)
@@ -1396,11 +1397,13 @@ fun AddAccountScreen(
                                 }
 
                                 if (pubKeyMatch != null) {
-                                    key = pubKeyMatch.value.trim()
-                                } else if (secKeyMatch != null) {
-                                    key = secKeyMatch.value.trim()
-                                } else if (jwtKeyMatch != null) {
-                                    key = jwtKeyMatch.value.trim()
+                                    publishableKey = pubKeyMatch.value.trim()
+                                }
+                                if (secKeyMatch != null) {
+                                    secretKey = secKeyMatch.value.trim()
+                                }
+                                if (pubKeyMatch == null && secKeyMatch == null && jwtKeyMatch != null) {
+                                    publishableKey = jwtKeyMatch.value.trim()
                                 }
 
                                 if (nameMatch != null) {
@@ -1460,11 +1463,21 @@ fun AddAccountScreen(
                     )
 
                     OutlinedTextField(
-                        value = key,
-                        onValueChange = { key = it },
-                        label = { Text("API Key (Publishable / Anon or Service)") },
+                        value = publishableKey,
+                        onValueChange = { publishableKey = it },
+                        label = { Text("Publishable Key (sb_publishable_... or anon)") },
                         singleLine = true,
-                        placeholder = { Text("sb_publishable_... or eyJhbGciOi...") },
+                        placeholder = { Text("sb_publishable_...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = secretKey,
+                        onValueChange = { secretKey = it },
+                        label = { Text("Secret Key / Service Role Key (Admin / SQL)") },
+                        singleLine = true,
+                        placeholder = { Text("sb_secret_... or service_role key") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -1571,7 +1584,8 @@ fun AddAccountScreen(
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Button(
                                     onClick = {
-                                        viewModel.saveAccountDirectly(name, url, key, pass, routingTag) {
+                                        val activeKey = secretKey.ifBlank { publishableKey.ifBlank { key } }
+                                        viewModel.saveAccountDirectly(name, url, activeKey, pass, routingTag, publishableKey, secretKey) {
                                             onNavigateBack()
                                         }
                                     },
@@ -1598,7 +1612,8 @@ fun AddAccountScreen(
                 // Dedicated Test Connection Button
                 OutlinedButton(
                     onClick = {
-                        viewModel.testConnectionOnly(url, key)
+                        val activeKey = secretKey.ifBlank { publishableKey.ifBlank { key } }
+                        viewModel.testConnectionOnly(url, activeKey)
                     },
                     enabled = testStatus !is TestStatus.Testing,
                     shape = RoundedCornerShape(16.dp),
@@ -1616,7 +1631,8 @@ fun AddAccountScreen(
                 // Test & Save Button
                 Button(
                     onClick = {
-                        viewModel.testAndSaveAccount(name, url, key, pass, routingTag) {
+                        val activeKey = secretKey.ifBlank { publishableKey.ifBlank { key } }
+                        viewModel.testAndSaveAccount(name, url, activeKey, pass, routingTag, publishableKey, secretKey) {
                             onNavigateBack()
                         }
                     },

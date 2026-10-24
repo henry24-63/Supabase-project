@@ -104,16 +104,24 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                                 val name = item.optString("name", "")
                                 val projectUrl = item.optString("project_url", "")
                                 val apiKey = item.optString("api_key", "")
+                                val publishableKey = item.optString("publishable_key", "")
+                                val secretKey = item.optString("secret_key", "")
+                                val serviceRoleKey = item.optString("service_role_key", "")
                                 val dbPassword = item.optString("db_password", "")
                                 val routingTag = item.optString("routing_tag", "")
                                 val isActive = item.optBoolean("is_active", true)
 
-                                if (projectUrl.isNotBlank() && apiKey.isNotBlank()) {
+                                val effectiveKey = apiKey.ifBlank { secretKey.ifBlank { publishableKey } }
+
+                                if (projectUrl.isNotBlank() && effectiveKey.isNotBlank()) {
                                     val accountObj = SupabaseAccount(
                                         id = id.ifBlank { UUID.randomUUID().toString() },
                                         name = name.ifBlank { "Project " + projectUrl.removePrefix("https://").split(".").firstOrNull() },
                                         projectUrl = cleanUrlProtocol(projectUrl),
-                                        apiKey = apiKey.trim(),
+                                        apiKey = effectiveKey.trim(),
+                                        publishableKey = publishableKey.trim(),
+                                        secretKey = secretKey.trim(),
+                                        serviceRoleKey = serviceRoleKey.ifBlank { secretKey }.trim(),
                                         databasePassword = dbPassword.trim(),
                                         routingTag = routingTag.trim(),
                                         isActive = isActive
@@ -213,16 +221,20 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
         key: String,
         pass: String,
         routingTag: String = "",
+        publishableKey: String = "",
+        secretKey: String = "",
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
             _testStatus.value = TestStatus.Testing
 
             val cleanUrl = cleanUrlProtocol(url)
-            val cleanKey = cleanApiKey(key)
+            val cleanPublishable = cleanApiKey(publishableKey)
+            val cleanSecret = cleanApiKey(secretKey)
+            val cleanKey = cleanApiKey(key.ifBlank { cleanSecret.ifBlank { cleanPublishable } })
 
-            if (cleanUrl.isEmpty() || cleanKey.isEmpty()) {
-                _testStatus.value = TestStatus.Error("URL and API Key are required.")
+            if (cleanUrl.isEmpty() || (cleanKey.isEmpty() && cleanPublishable.isEmpty() && cleanSecret.isEmpty())) {
+                _testStatus.value = TestStatus.Error("URL and at least one API Key (Publishable or Secret Key) are required.")
                 return@launch
             }
 
@@ -241,6 +253,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                         name = name.ifBlank { defaultName },
                         projectUrl = cleanUrl,
                         apiKey = cleanKey,
+                        publishableKey = cleanPublishable,
+                        secretKey = cleanSecret,
+                        serviceRoleKey = cleanSecret,
                         databasePassword = pass.trim(),
                         routingTag = routingTag.trim()
                     )
@@ -257,7 +272,7 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                 onFailure = { ex ->
                     _testStatus.value = TestStatus.Error(
                         error = ex.message ?: "Validation failed",
-                        hint = "Supabase Dashboard -> Settings -> API se project URL aur anon key check karein."
+                        hint = "Supabase Dashboard -> Settings -> API se project URL aur keys check karein."
                     )
                 }
             )
@@ -519,10 +534,14 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
         key: String,
         pass: String,
         routingTag: String = "",
+        publishableKey: String = "",
+        secretKey: String = "",
         onSuccess: () -> Unit
     ) {
         val cleanUrl = cleanUrlProtocol(url)
-        val cleanKey = cleanApiKey(key)
+        val cleanPublishable = cleanApiKey(publishableKey)
+        val cleanSecret = cleanApiKey(secretKey)
+        val cleanKey = cleanApiKey(key.ifBlank { cleanSecret.ifBlank { cleanPublishable } })
         val defaultName = "Project " + cleanUrl.replace("https://", "")
             .replace("http://", "")
             .split(".")
@@ -532,6 +551,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
             name = name.ifBlank { defaultName },
             projectUrl = cleanUrl,
             apiKey = cleanKey,
+            publishableKey = cleanPublishable,
+            secretKey = cleanSecret,
+            serviceRoleKey = cleanSecret,
             databasePassword = pass.trim(),
             routingTag = routingTag.trim(),
             isActive = true
@@ -550,6 +572,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                     put("name", account.name)
                     put("project_url", account.projectUrl)
                     put("api_key", account.apiKey)
+                    put("publishable_key", account.publishableKey)
+                    put("secret_key", account.secretKey)
+                    put("service_role_key", account.serviceRoleKey)
                     put("db_password", account.databasePassword)
                     put("routing_tag", account.routingTag)
                     put("is_active", account.isActive)

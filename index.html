@@ -367,15 +367,27 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">API Key (Anon Public or Service Role) <span class="text-rose-400">*</span></label>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Publishable Key (New Format / Anon) <span class="text-rose-400">*</span></label>
                 <input 
                   type="text" 
-                  id="formKey" 
+                  id="formPublishableKey" 
                   placeholder="sb_publishable_... or eyJhbGciOi..." 
                   class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
                 >
               </div>
 
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Secret Key / Service Role Key (Admin / SQL)</label>
+                <input 
+                  type="text" 
+                  id="formSecretKey" 
+                  placeholder="sb_secret_... or service_role key..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 mono text-xs" 
+                >
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1">Database Password (Optional)</label>
                 <input 
@@ -383,6 +395,16 @@
                   id="formPass" 
                   placeholder="Database connection password..." 
                   class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs" 
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Direct Routing Tag (Optional)</label>
+                <input 
+                  type="text" 
+                  id="formTag" 
+                  placeholder="e.g. ott-main, users-db..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
                 >
               </div>
             </div>
@@ -1154,7 +1176,7 @@
       const urlMatch = raw.match(/https?:\/\/[a-zA-Z0-9.-]+\.supabase\.co/i);
       const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
       const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
-      const jwtMatch = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/i);
+      const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
       const nameMatch = raw.match(/(?:project\s*name\s*[:\s]*)(.+)/i);
       const passMatch = raw.match(/(?:Database\s*password\s*[:\s]*)(.+)/i) || raw.match(/(?:password\s*[:\s]*)(.+)/i);
 
@@ -1164,12 +1186,18 @@
         document.getElementById('formUrl').value = urlMatch[0].trim();
       }
 
+      const pubEl = document.getElementById('formPublishableKey');
+      const secEl = document.getElementById('formSecretKey');
+
       if (pubMatch) {
-        document.getElementById('formKey').value = pubMatch[0].trim();
-      } else if (secMatch) {
-        document.getElementById('formKey').value = secMatch[0].trim();
-      } else if (jwtMatch) {
-        document.getElementById('formKey').value = jwtMatch[0].trim();
+        if (pubEl) pubEl.value = pubMatch[0].trim();
+      }
+      if (secMatch) {
+        if (secEl) secEl.value = secMatch[0].trim();
+      }
+      if (!pubMatch && !secMatch && jwtMatches && jwtMatches.length > 0) {
+        if (pubEl) pubEl.value = jwtMatches[0].trim();
+        if (jwtMatches.length > 1 && secEl) secEl.value = jwtMatches[1].trim();
       }
 
       if (nameMatch) {
@@ -1191,13 +1219,16 @@
     // ==================== INLINE TEST FORM ACCOUNT ====================
     async function testFormAccountNow() {
       const urlInput = document.getElementById('formUrl');
-      const keyInput = document.getElementById('formKey');
+      const pubKeyInput = document.getElementById('formPublishableKey');
+      const secKeyInput = document.getElementById('formSecretKey');
       const box = document.getElementById('inlineTestResult');
       const btn = document.getElementById('testFormBtn');
       const spinner = document.getElementById('testBtnSpinner');
 
       let url = urlInput.value.trim().replace(/^['"]|['"]$/g, '');
-      let key = keyInput.value.trim().replace(/^['"]|['"]$/g, '');
+      let pubKey = pubKeyInput ? pubKeyInput.value.trim().replace(/^['"]|['"]$/g, '') : '';
+      let secKey = secKeyInput ? secKeyInput.value.trim().replace(/^['"]|['"]$/g, '') : '';
+      let key = secKey || pubKey;
 
       // Check if user entered dashboard url
       const dashMatch = url.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
@@ -1207,7 +1238,7 @@
       }
 
       if (!url || !key) {
-        showFormAlert('Missing URL or Key', 'Please enter both the Project URL and API Key to run the live test.');
+        showFormAlert('Missing URL or Keys', 'Please enter Project URL and at least one API Key (Publishable or Secret Key) to run live test.');
         return;
       }
 
@@ -1225,7 +1256,6 @@
 
       const start = Date.now();
       try {
-        // Step 1: Call Vercel serverless proxy diagnose action to prevent any CORS issues
         const res = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
         const latency = Date.now() - start;
 
@@ -1235,21 +1265,20 @@
             box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
             box.innerHTML = `
               <div class="flex items-center justify-between font-bold">
-                <span class="flex items-center gap-1.5">✅ API Key Verified & Live!</span>
+                <span class="flex items-center gap-1.5">✅ API Keys Verified & Live!</span>
                 <span class="mono">${data.latencyMs || latency}ms</span>
               </div>
               <div class="text-[11px] text-slate-300 space-y-0.5">
-                <p>&bull; Gateway: <strong>${data.protocol || 'HTTPS'}</strong> &bull; Key Type: <strong>${escapeHtml(data.keyType || 'Supabase Key')}</strong></p>
+                <p>&bull; Gateway: <strong>${data.protocol || 'HTTPS'}</strong> &bull; Key Tested: <strong>${escapeHtml(data.keyType || (secKey ? 'Secret Admin Key' : 'Publishable Key'))}</strong></p>
                 <p>&bull; Handshake: <strong>Passed</strong> &bull; Ready to save!</p>
               </div>
             `;
-            showToast('✅ Key verified! Passed handshake test.');
+            showToast('✅ Credentials verified! Passed handshake test.');
           } else if (data.status === 'AUTH_FAILED') {
             box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-rose-950/40 border border-rose-500/40 text-rose-300";
             box.innerHTML = `
               <div class="font-bold flex items-center gap-1.5">❌ Authentication Failed (HTTP ${data.statusCode})</div>
               <p class="text-[11px] text-slate-300">${escapeHtml(data.error || 'The provided API Key was rejected by this Supabase project.')}</p>
-              <p class="text-[10px] text-amber-300 mt-1">💡 Hint: Go to Supabase Dashboard -> Project Settings -> API and copy the 'anon public' key.</p>
             `;
           } else {
             box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-950/40 border border-amber-500/40 text-amber-300";
@@ -1259,7 +1288,6 @@
             `;
           }
         } else {
-          // Direct fallback attempt using auth settings check
           const directRes = await fetch(`${url}/auth/v1/settings`, { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } });
           const latency = Date.now() - start;
           if (directRes.ok) {
@@ -1291,13 +1319,18 @@
     async function submitNewAccount() {
       const nameInput = document.getElementById('formName');
       const urlInput = document.getElementById('formUrl');
-      const keyInput = document.getElementById('formKey');
+      const pubKeyInput = document.getElementById('formPublishableKey');
+      const secKeyInput = document.getElementById('formSecretKey');
       const passInput = document.getElementById('formPass');
+      const tagInput = document.getElementById('formTag');
 
       const name = nameInput.value.trim();
       let project_url = urlInput.value.trim();
-      const api_key = keyInput.value.trim();
-      const db_password = passInput.value.trim();
+      const publishable_key = pubKeyInput ? pubKeyInput.value.trim() : '';
+      const secret_key = secKeyInput ? secKeyInput.value.trim() : '';
+      const api_key = secret_key || publishable_key;
+      const db_password = passInput ? passInput.value.trim() : '';
+      const routing_tag = tagInput ? tagInput.value.trim() : '';
 
       clearFormAlert();
 
@@ -1312,9 +1345,9 @@
         urlInput.focus();
         return;
       }
-      if (!api_key) {
-        showFormAlert('Missing API Key', 'Please enter your Supabase publishable or service key.');
-        keyInput.focus();
+      if (!publishable_key && !secret_key) {
+        showFormAlert('Missing Keys', 'Please enter at least a Publishable Key or a Secret Key / Service Role Key.');
+        if (pubKeyInput) pubKeyInput.focus();
         return;
       }
 
@@ -1330,15 +1363,15 @@
 
       btn.disabled = true;
       spinner.classList.remove('hidden');
-      btnText.innerText = "Smart Testing API Key (Read/Write Ping)...";
+      btnText.innerText = "Smart Testing Credentials...";
 
-      // SMART PRE-TEST: Read & Write/Ping test before saving
+      // SMART PRE-TEST
       try {
         const testRes = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(project_url)}&key=${encodeURIComponent(api_key)}`);
         if (testRes.ok) {
           const testData = await testRes.json();
           if (testData.status === 'AUTH_FAILED') {
-            showFormAlert('Invalid Supabase API Key', `The API Key failed authentication with status HTTP ${testData.statusCode}. Please verify your key.`);
+            showFormAlert('Invalid Supabase Keys', `The provided keys failed authentication with status HTTP ${testData.statusCode}. Please verify your keys.`);
             btn.disabled = false;
             spinner.classList.add('hidden');
             btnText.innerText = "Test & Save to Database";
@@ -1354,14 +1387,18 @@
       const payload = {
         name,
         project_url,
+        publishable_key,
+        secret_key,
+        service_role_key: secret_key,
         api_key,
-        db_password
+        db_password,
+        routing_tag
       };
 
       let saveSuccess = false;
       let lastErrorMessage = '';
 
-      // METHOD 1: Try Vercel Serverless API (/api/accounts)
+      // METHOD 1: Try Vercel / Cloudflare Worker API (/api/accounts)
       try {
         const res = await fetch('/api/accounts', {
           method: 'POST',
@@ -1415,14 +1452,15 @@
         showToast('🎉 Account verified and saved to Master Supabase!', 'success');
         nameInput.value = '';
         urlInput.value = '';
-        keyInput.value = '';
-        passInput.value = '';
+        if (pubKeyInput) pubKeyInput.value = '';
+        if (secKeyInput) secKeyInput.value = '';
+        if (passInput) passInput.value = '';
+        if (tagInput) tagInput.value = '';
         document.getElementById('rawPasteInput').value = '';
         document.getElementById('inlineTestResult').classList.add('hidden');
         switchTab('accounts');
         await fetchAccounts();
       } else {
-        // If there was a database permissions issue (RLS)
         const isPermissionIssue = lastErrorMessage.toLowerCase().includes('permission') || 
                                   lastErrorMessage.toLowerCase().includes('violates row-level') ||
                                   lastErrorMessage.toLowerCase().includes('policy');
@@ -1441,7 +1479,7 @@
         const tempAccount = { id: 'local_' + Date.now(), ...payload };
         state.accounts.push(tempAccount);
         try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
-        showToast('⚠️ Saved to local cache. (Check Supabase permission alert above)', 'warn');
+        showToast('⚠️ Saved to local cache.', 'warn');
       }
     }
 
