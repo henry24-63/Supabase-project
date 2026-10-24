@@ -124,18 +124,52 @@ export default {
       }
       if (method === 'POST') {
         const reqBody = await request.json().catch(() => ({}));
-        const { data, error } = await supabase.from('supabase_accounts').insert([reqBody]).select();
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
-        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+        
+        // 1. Ensure master database table and columns exist
+        await ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env);
+
+        // 2. Try saving via Supabase JS Client
+        let { data, error } = await supabase.from('supabase_accounts').insert([reqBody]).select();
+
+        // 3. Handle schema cache / missing column errors dynamically
+        if (error) {
+          const errMsg = (error.message || '').toLowerCase();
+          if (errMsg.includes('column') || errMsg.includes('schema cache') || errMsg.includes('could not find') || error.code === 'PGRST204') {
+            const sqlRes = await insertAccountViaSql(MASTER_URL, MASTER_KEY, reqBody, env);
+            if (sqlRes.success) {
+              return new Response(JSON.stringify(sqlRes.data || [reqBody]), { status: 200, headers: corsHeaders });
+            }
+          }
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        }
+        return new Response(JSON.stringify(data || [reqBody]), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'PATCH') {
         const id = url.searchParams.get('id');
         const reqBody = await request.json().catch(() => ({}));
         if (!id) return new Response(JSON.stringify({ error: 'id required' }), { status: 400, headers: corsHeaders });
-        const { data, error } = await supabase.from('supabase_accounts').update(reqBody).eq('id', id).select();
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
-        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+
+        // 1. Ensure master database schema is up-to-date
+        await ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env);
+
+        // 2. Try updating via Supabase JS Client
+        let { data, error } = await supabase.from('supabase_accounts').update(reqBody).eq('id', id).select();
+
+        // 3. Fallback to SQL execution on schema cache error
+        if (error) {
+          const errMsg = (error.message || '').toLowerCase();
+          if (errMsg.includes('column') || errMsg.includes('schema cache') || errMsg.includes('could not find') || error.code === 'PGRST204') {
+            const sqlRes = await updateAccountViaSql(MASTER_URL, MASTER_KEY, id, reqBody, env);
+            if (sqlRes.success) {
+              return new Response(JSON.stringify(sqlRes.data || [reqBody]), { status: 200, headers: corsHeaders });
+            }
+          }
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        }
+        return new Response(JSON.stringify(data || [reqBody]), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'DELETE') {
         const id = url.searchParams.get('id');
         const urlParam = url.searchParams.get('url');
@@ -756,3 +790,147 @@ function parseRawSupabaseCredentials(raw) {
     db_password
   };
 }
+
+async function ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env = {}) {
+  const masterAcc = {
+    name: 'Master Account',
+    project_url: MASTER_URL,
+    secret_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    service_role_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    publishable_key: MASTER_KEY,
+    api_key: MASTER_KEY
+  };
+
+  const schemaSql = `
+    CREATE TABLE IF NOT EXISTS public.supabase_accounts (
+      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      name text,
+      project_name text,
+      project_url text,
+      api_key text,
+      routing_tag text,
+      is_active boolean DEFAULT true,
+      publishable_key text,
+      secret_key text,
+      anon_key text,
+      service_role_key text,
+      db_connection_string text,
+      db_password text,
+      created_at timestamptz DEFAULT now()
+    );
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS name text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS project_name text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS project_url text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS api_key text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS routing_tag text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS publishable_key text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS secret_key text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS anon_key text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS service_role_key text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS db_connection_string text;
+    ALTER TABLE public.supabase_accounts ADD COLUMN IF NOT EXISTS db_password text;
+    ALTER TABLE public.supabase_accounts DISABLE ROW LEVEL SECURITY;
+    GRANT ALL ON TABLE public.supabase_accounts TO anon, authenticated, service_role;
+
+    CREATE TABLE IF NOT EXISTS public.supabase_master_keys (
+      key text PRIMARY KEY,
+      name text,
+      status text,
+      destination text,
+      created text,
+      connected_account_ids jsonb DEFAULT '[]'::jsonb,
+      connected_account_names jsonb DEFAULT '[]'::jsonb,
+      created_at timestamptz DEFAULT now()
+    );
+    ALTER TABLE public.supabase_master_keys DISABLE ROW LEVEL SECURITY;
+    GRANT ALL ON TABLE public.supabase_master_keys TO anon, authenticated, service_role;
+  `;
+
+  try {
+    await attemptExecuteSql(masterAcc, schemaSql, env);
+  } catch (e) {}
+}
+
+async function insertAccountViaSql(MASTER_URL, MASTER_KEY, accountObj, env = {}) {
+  const masterAcc = {
+    project_url: MASTER_URL,
+    secret_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    service_role_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    publishable_key: MASTER_KEY,
+    api_key: MASTER_KEY
+  };
+
+  const fields = [];
+  const values = [];
+
+  const allowedFields = [
+    'name', 'project_name', 'project_url', 'api_key', 'routing_tag',
+    'is_active', 'publishable_key', 'secret_key', 'anon_key',
+    'service_role_key', 'db_connection_string', 'db_password'
+  ];
+
+  for (const [k, v] of Object.entries(accountObj || {})) {
+    if (!allowedFields.includes(k) || v === undefined) continue;
+    fields.push(`"${k.replace(/[^a-zA-Z0-9_]/g, '')}"`);
+    if (v === null) {
+      values.push('NULL');
+    } else if (typeof v === 'boolean' || typeof v === 'number') {
+      values.push(v);
+    } else {
+      values.push(`'${String(v).replace(/'/g, "''")}'`);
+    }
+  }
+
+  if (fields.length === 0) {
+    return { success: false, error: 'No valid fields provided' };
+  }
+
+  const sql = `INSERT INTO public.supabase_accounts (${fields.join(', ')}) VALUES (${values.join(', ')}) RETURNING *;`;
+  const res = await attemptExecuteSql(masterAcc, sql, env);
+  if (res.success) {
+    return { success: true, data: res.result };
+  }
+  return { success: false, error: res.error || 'SQL insert failed' };
+}
+
+async function updateAccountViaSql(MASTER_URL, MASTER_KEY, id, accountObj, env = {}) {
+  const masterAcc = {
+    project_url: MASTER_URL,
+    secret_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    service_role_key: env.MASTER_SERVICE_ROLE_KEY || MASTER_KEY,
+    publishable_key: MASTER_KEY,
+    api_key: MASTER_KEY
+  };
+
+  const sets = [];
+  const allowedFields = [
+    'name', 'project_name', 'project_url', 'api_key', 'routing_tag',
+    'is_active', 'publishable_key', 'secret_key', 'anon_key',
+    'service_role_key', 'db_connection_string', 'db_password'
+  ];
+
+  for (const [k, v] of Object.entries(accountObj || {})) {
+    if (!allowedFields.includes(k) || v === undefined) continue;
+    const cleanK = k.replace(/[^a-zA-Z0-9_]/g, '');
+    if (v === null) {
+      sets.push(`"${cleanK}" = NULL`);
+    } else if (typeof v === 'boolean' || typeof v === 'number') {
+      sets.push(`"${cleanK}" = ${v}`);
+    } else {
+      sets.push(`"${cleanK}" = '${String(v).replace(/'/g, "''")}'`);
+    }
+  }
+
+  if (sets.length === 0) {
+    return { success: false, error: 'No valid fields provided for update' };
+  }
+
+  const sql = `UPDATE public.supabase_accounts SET ${sets.join(', ')} WHERE id = ${parseInt(id, 10)} RETURNING *;`;
+  const res = await attemptExecuteSql(masterAcc, sql, env);
+  if (res.success) {
+    return { success: true, data: res.result };
+  }
+  return { success: false, error: res.error || 'SQL update failed' };
+}
+
