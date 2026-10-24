@@ -1187,8 +1187,8 @@
       const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
       const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
       const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
-      const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:\s]*([^\n\r]+)/i);
-      const passMatch = raw.match(/(?:Database\s*password|password|db_password)\s*[:\s]*([^\n\r]+)/i);
+      const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:=]\s*([^\n\r"']+)/i);
+      const passMatch = raw.match(/(?:Database\s*password|db_password|password)(?!\s*string|\s*uri|\s*url)\s*[:=]\s*([^\n\r"']+)/i);
       const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
 
       if (dashMatch) {
@@ -1211,15 +1211,31 @@
         if (jwtMatches.length > 1 && secEl) secEl.value = jwtMatches[1].trim();
       }
 
+      let db_connection_string = '';
       if (uriMatch) {
+        db_connection_string = uriMatch[0].trim();
         const connEl = document.getElementById('formConnString');
-        if (connEl) connEl.value = uriMatch[0].trim();
+        if (connEl) connEl.value = db_connection_string;
+      }
 
-        // Extract password embedded in URI if present e.g. postgres://postgres:password@host
+      let db_password = '';
+      if (uriMatch) {
         const uriPassMatch = uriMatch[0].match(/:\/\/[^:]+:([^@]+)@/);
         if (uriPassMatch && uriPassMatch[1] && uriPassMatch[1] !== '[YOUR-PASSWORD]' && uriPassMatch[1] !== 'YOUR-PASSWORD') {
-          document.getElementById('formPass').value = uriPassMatch[1].trim();
+          db_password = uriPassMatch[1].trim();
         }
+      }
+
+      if (!db_password && passMatch && passMatch[1]) {
+        const extractedPass = passMatch[1].trim().replace(/['"]/g, '');
+        if (!extractedPass.toLowerCase().startsWith('postgres')) {
+          db_password = extractedPass;
+        }
+      }
+
+      if (db_password) {
+        const passEl = document.getElementById('formPass');
+        if (passEl) passEl.value = db_password;
       }
 
       if (nameMatch && nameMatch[1]) {
@@ -1228,10 +1244,6 @@
         const fullUrl = document.getElementById('formUrl').value;
         const sub = fullUrl.replace(/https?:\/\//, '').split('.')[0];
         document.getElementById('formName').value = 'Project ' + sub;
-      }
-
-      if (passMatch && passMatch[1] && !document.getElementById('formPass').value) {
-        document.getElementById('formPass').value = passMatch[1].trim().replace(/['"]/g, '');
       }
 
       showToast('✨ Auto-detected and filled form fields!', 'success');
@@ -1422,8 +1434,9 @@
 
       let saveSuccess = false;
       let lastErrorMessage = '';
+      let savedAccountRecord = null;
 
-      // METHOD 1: Try Vercel / Cloudflare Worker API (/api/accounts)
+      // METHOD 1: Try Worker API (/api/accounts)
       try {
         const res = await fetch('/api/accounts', {
           method: 'POST',
@@ -1432,7 +1445,11 @@
         });
 
         if (res.ok) {
-          saveSuccess = true;
+          const resData = await res.json().catch(() => null);
+          if (resData) {
+            saveSuccess = true;
+            savedAccountRecord = Array.isArray(resData) ? resData[0] : resData;
+          }
         } else {
           const errData = await res.json().catch(() => ({}));
           lastErrorMessage = errData.error || errData.details || 'Server error ' + res.status;
@@ -1458,7 +1475,11 @@
           });
 
           if (directRes.ok) {
-            saveSuccess = true;
+            const directData = await directRes.json().catch(() => null);
+            if (directData) {
+              saveSuccess = true;
+              savedAccountRecord = Array.isArray(directData) ? directData[0] : directData;
+            }
           } else {
             const fbErr = await directRes.json().catch(() => ({}));
             lastErrorMessage = fbErr.message || fbErr.error || lastErrorMessage;
@@ -1481,8 +1502,20 @@
         if (secKeyInput) secKeyInput.value = '';
         if (passInput) passInput.value = '';
         if (tagInput) tagInput.value = '';
+        if (connStrInput) connStrInput.value = '';
         document.getElementById('rawPasteInput').value = '';
         document.getElementById('inlineTestResult').classList.add('hidden');
+
+        // Insert saved account record directly into state and local storage so UI renders instantly
+        const itemToSave = savedAccountRecord || { id: 'acc_' + Date.now(), ...payload };
+        const existingIdx = state.accounts.findIndex(a => (itemToSave.id && String(a.id) === String(itemToSave.id)) || a.project_url === itemToSave.project_url);
+        if (existingIdx >= 0) {
+          state.accounts[existingIdx] = { ...state.accounts[existingIdx], ...itemToSave };
+        } else {
+          state.accounts.unshift(itemToSave);
+        }
+        try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
+
         switchTab('accounts');
         await fetchAccounts();
       } else {
@@ -1499,12 +1532,6 @@
         } else {
           showFormAlert('Save Failed: ' + lastErrorMessage, 'Please verify your Supabase credentials or check your internet connection.');
         }
-
-        // Save to client cache as backup
-        const tempAccount = { id: 'local_' + Date.now(), ...payload };
-        state.accounts.push(tempAccount);
-        try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
-        showToast('⚠️ Saved to local cache.', 'warn');
       }
     }
 

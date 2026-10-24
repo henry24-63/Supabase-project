@@ -118,10 +118,26 @@ export default {
     // 3. API ACCOUNTS ROUTE (/api/accounts)
     if (url.pathname === '/api/accounts' || url.pathname === '/api/accounts/') {
       if (method === 'GET') {
+        await ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env);
         const { data, error } = await supabase.from('supabase_accounts').select('*');
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        if (error) {
+          try {
+            const directRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_accounts?select=*`, {
+              headers: {
+                'apikey': MASTER_KEY,
+                'Authorization': `Bearer ${MASTER_KEY}`
+              }
+            });
+            if (directRes.ok) {
+              const directData = await directRes.json();
+              return new Response(JSON.stringify(directData || []), { status: 200, headers: corsHeaders });
+            }
+          } catch (e) {}
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        }
         return new Response(JSON.stringify(data || []), { status: 200, headers: corsHeaders });
       }
+
       if (method === 'POST') {
         const reqBody = await request.json().catch(() => ({}));
         
@@ -131,18 +147,39 @@ export default {
         // 2. Try saving via Supabase JS Client
         let { data, error } = await supabase.from('supabase_accounts').insert([reqBody]).select();
 
-        // 3. Handle schema cache / missing column errors dynamically
-        if (error) {
-          const errMsg = (error.message || '').toLowerCase();
-          if (errMsg.includes('column') || errMsg.includes('schema cache') || errMsg.includes('could not find') || error.code === 'PGRST204') {
-            const sqlRes = await insertAccountViaSql(MASTER_URL, MASTER_KEY, reqBody, env);
-            if (sqlRes.success) {
-              return new Response(JSON.stringify(sqlRes.data || [reqBody]), { status: 200, headers: corsHeaders });
+        // 3. If Supabase JS Client failed, try direct REST call
+        if (error || !data || data.length === 0) {
+          try {
+            const restRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_accounts`, {
+              method: 'POST',
+              headers: {
+                'apikey': MASTER_KEY,
+                'Authorization': `Bearer ${MASTER_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify(reqBody)
+            });
+            if (restRes.ok) {
+              const restData = await restRes.json();
+              if (restData && (Array.isArray(restData) ? restData.length > 0 : Object.keys(restData).length > 0)) {
+                return new Response(JSON.stringify(Array.isArray(restData) ? restData : [restData]), { status: 200, headers: corsHeaders });
+              }
             }
+          } catch (restErr) {}
+
+          // 4. Try SQL insertion fallback
+          const sqlRes = await insertAccountViaSql(MASTER_URL, MASTER_KEY, reqBody, env);
+          if (sqlRes.success && sqlRes.data && (Array.isArray(sqlRes.data) ? sqlRes.data.length > 0 : Object.keys(sqlRes.data).length > 0)) {
+            const resultList = Array.isArray(sqlRes.data) ? sqlRes.data : [sqlRes.data];
+            return new Response(JSON.stringify(resultList), { status: 200, headers: corsHeaders });
           }
-          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+
+          // If all failed, DO NOT return fake success - return HTTP 500 error!
+          return new Response(JSON.stringify({ error: error ? error.message : 'Database insert failed' }), { status: 500, headers: corsHeaders });
         }
-        return new Response(JSON.stringify(data || [reqBody]), { status: 200, headers: corsHeaders });
+
+        return new Response(JSON.stringify(data), { status: 200, headers: corsHeaders });
       }
 
       if (method === 'PATCH') {
@@ -627,13 +664,12 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 4. Default Success Response for Database SQL Action
+  // 4. Default Failure Response if no SQL endpoint responded successfully
   return {
-    success: true,
-    status: "EXECUTED",
-    sqlExecuted: cleanSql,
-    message: "SQL query submitted for database execution.",
-    result: { affected_rows: 1, query: cleanSql }
+    success: false,
+    status: "NO_SQL_ENDPOINT",
+    error: "Direct SQL execution endpoint not exposed or reachable on target Supabase project.",
+    sqlExecuted: cleanSql
   };
 }
 
@@ -731,8 +767,8 @@ function parseRawSupabaseCredentials(raw) {
   const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
   const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
   const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
-  const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:\s]*([^\n\r]+)/i);
-  const passMatch = raw.match(/(?:Database\s*password|password|db_password)\s*[:\s]*([^\n\r]+)/i);
+  const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:=]\s*([^\n\r"']+)/i);
+  const passMatch = raw.match(/(?:Database\s*password|db_password|password)(?!\s*string|\s*uri|\s*url)\s*[:=]\s*([^\n\r"']+)/i);
   const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
 
   let project_url = '';
@@ -767,7 +803,10 @@ function parseRawSupabaseCredentials(raw) {
   }
 
   if (passMatch && passMatch[1] && !db_password) {
-    db_password = passMatch[1].trim().replace(/['"]/g, '');
+    const extractedPass = passMatch[1].trim().replace(/['"]/g, '');
+    if (!extractedPass.toLowerCase().startsWith('postgres')) {
+      db_password = extractedPass;
+    }
   }
 
   let project_name = '';
