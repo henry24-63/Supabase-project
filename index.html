@@ -1187,8 +1187,8 @@
       const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
       const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
       const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
-      const nameMatch = raw.match(/(?:project\s*name|alias|name)\s*[:=]\s*([^\n\r"']+)/i);
-      const passMatch = raw.match(/(?:Database\s*password|db_password|password)(?!\s*string|\s*uri|\s*url)\s*[:=]\s*([^\n\r"']+)/i);
+      const nameMatch = raw.match(/(?:project\s*name|alias)[\s:=]+([^\n\r"']+)/i);
+      const passMatch = raw.match(/(?:Database\s*password|db_password|db\s*pass)(?!\s*string|\s*uri|\s*url)[\s:=]+([^\n\r"']+)/i);
       const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
 
       if (dashMatch) {
@@ -1206,30 +1206,49 @@
       if (secMatch) {
         if (secEl) secEl.value = secMatch[0].trim();
       }
-      if (!pubMatch && !secMatch && jwtMatches && jwtMatches.length > 0) {
-        if (pubEl) pubEl.value = jwtMatches[0].trim();
-        if (jwtMatches.length > 1 && secEl) secEl.value = jwtMatches[1].trim();
-      }
-
-      let db_connection_string = '';
-      if (uriMatch) {
-        db_connection_string = uriMatch[0].trim();
-        const connEl = document.getElementById('formConnString');
-        if (connEl) connEl.value = db_connection_string;
+      if (jwtMatches && jwtMatches.length > 0) {
+        if (!pubMatch && pubEl) pubEl.value = jwtMatches[0].trim();
+        if (jwtMatches.length > 1 && secEl && !secMatch) secEl.value = jwtMatches[1].trim();
       }
 
       let db_password = '';
-      if (uriMatch) {
-        const uriPassMatch = uriMatch[0].match(/:\/\/[^:]+:([^@]+)@/);
-        if (uriPassMatch && uriPassMatch[1] && uriPassMatch[1] !== '[YOUR-PASSWORD]' && uriPassMatch[1] !== 'YOUR-PASSWORD') {
-          db_password = uriPassMatch[1].trim();
+      if (passMatch && passMatch[1]) {
+        const candidate = passMatch[1].trim().replace(/^['"]|['"]$/g, '');
+        if (!candidate.toLowerCase().startsWith('postgres') && !candidate.toLowerCase().startsWith('note:') && !candidate.toLowerCase().startsWith('this password')) {
+          db_password = candidate;
         }
       }
 
-      if (!db_password && passMatch && passMatch[1]) {
-        const extractedPass = passMatch[1].trim().replace(/['"]/g, '');
-        if (!extractedPass.toLowerCase().startsWith('postgres')) {
-          db_password = extractedPass;
+      if (!db_password && uriMatch) {
+        const uri = uriMatch[0].trim();
+        const lastAt = uri.lastIndexOf('@');
+        const schemeEnd = uri.indexOf('://');
+        if (lastAt !== -1 && schemeEnd !== -1) {
+          const userPass = uri.slice(schemeEnd + 3, lastAt);
+          const colonIdx = userPass.indexOf(':');
+          if (colonIdx !== -1) {
+            const p = userPass.slice(colonIdx + 1);
+            if (p && !p.includes('[YOUR-PASSWORD]') && !p.includes('[PASSWORD]')) {
+              try {
+                db_password = decodeURIComponent(p);
+              } catch (e) {
+                db_password = p;
+              }
+            }
+          }
+        }
+      }
+
+      if (!db_password) {
+        const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        for (let i = 0; i < Math.min(lines.length - 1, 5); i++) {
+          if (lines[i].includes('@') && lines[i].includes('.') && !lines[i].startsWith('postgres')) {
+            const nextLine = lines[i + 1];
+            if (nextLine && nextLine.length >= 6 && !nextLine.includes(' ') && !nextLine.toLowerCase().includes('project') && !nextLine.toLowerCase().includes('url')) {
+              db_password = nextLine;
+              break;
+            }
+          }
         }
       }
 
@@ -1238,8 +1257,29 @@
         if (passEl) passEl.value = db_password;
       }
 
+      let db_connection_string = '';
+      if (uriMatch) {
+        db_connection_string = uriMatch[0].trim();
+        if (db_password && (db_connection_string.includes('[YOUR-PASSWORD]') || db_connection_string.includes('[PASSWORD]'))) {
+          const encPass = encodeURIComponent(db_password);
+          db_connection_string = db_connection_string.replace(/\[YOUR[-_]PASSWORD\]/gi, encPass)
+                                                     .replace(/\[PASSWORD\]/gi, encPass);
+        }
+        const connEl = document.getElementById('formConnString');
+        if (connEl) connEl.value = db_connection_string;
+      } else if (db_password) {
+        const projectUrl = document.getElementById('formUrl').value;
+        if (projectUrl) {
+          const ref = projectUrl.replace(/https?:\/\//, '').split('.')[0];
+          const encPass = encodeURIComponent(db_password);
+          db_connection_string = `postgresql://postgres:${encPass}@db.${ref}.supabase.co:5432/postgres`;
+          const connEl = document.getElementById('formConnString');
+          if (connEl) connEl.value = db_connection_string;
+        }
+      }
+
       if (nameMatch && nameMatch[1]) {
-        document.getElementById('formName').value = nameMatch[1].trim().replace(/['"]/g, '');
+        document.getElementById('formName').value = nameMatch[1].trim().replace(/^['"]|['"]$/g, '');
       } else if (dashMatch || urlMatch) {
         const fullUrl = document.getElementById('formUrl').value;
         const sub = fullUrl.replace(/https?:\/\//, '').split('.')[0];
