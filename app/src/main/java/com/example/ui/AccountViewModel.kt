@@ -110,6 +110,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                                 val anonKey = item.optString("anon_key", "")
                                 val dbConnectionString = item.optString("db_connection_string", "")
                                 val dbPassword = item.optString("db_password", "")
+                                val accountEmail = item.optString("account_email", "")
+                                val accountPassword = item.optString("account_password", "")
                                 val routingTag = item.optString("routing_tag", "")
                                 val isActive = item.optBoolean("is_active", true)
 
@@ -126,7 +128,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                                         serviceRoleKey = serviceRoleKey.ifBlank { secretKey }.trim(),
                                         anonKey = anonKey.trim(),
                                         dbConnectionString = dbConnectionString.trim(),
-                                        databasePassword = dbPassword.trim(),
+                                        accountEmail = accountEmail.trim(),
+                                        accountPassword = accountPassword.trim(),
                                         routingTag = routingTag.trim(),
                                         isActive = isActive
                                     )
@@ -227,6 +230,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
         routingTag: String = "",
         publishableKey: String = "",
         secretKey: String = "",
+        accountEmail: String = "",
+        accountPassword: String = "",
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
@@ -260,7 +265,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                         publishableKey = cleanPublishable,
                         secretKey = cleanSecret,
                         serviceRoleKey = cleanSecret,
-                        databasePassword = pass.trim(),
+                        dbPassword = pass.trim(),
+                        accountEmail = accountEmail.trim(),
+                        accountPassword = accountPassword.trim(),
                         routingTag = routingTag.trim()
                     )
                     supabaseManager.addAccount(newAccount)
@@ -540,6 +547,8 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
         routingTag: String = "",
         publishableKey: String = "",
         secretKey: String = "",
+        accountEmail: String = "",
+        accountPassword: String = "",
         onSuccess: () -> Unit
     ) {
         val cleanUrl = cleanUrlProtocol(url)
@@ -558,7 +567,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
             publishableKey = cleanPublishable,
             secretKey = cleanSecret,
             serviceRoleKey = cleanSecret,
-            databasePassword = pass.trim(),
+            dbPassword = pass.trim(),
+            accountEmail = accountEmail.trim(),
+            accountPassword = accountPassword.trim(),
             routingTag = routingTag.trim(),
             isActive = true
         )
@@ -581,7 +592,9 @@ class AccountViewModel(private val supabaseManager: SupabaseManager) : ViewModel
                     put("service_role_key", account.serviceRoleKey)
                     put("anon_key", account.anonKey)
                     put("db_connection_string", account.dbConnectionString)
-                    put("db_password", account.databasePassword)
+                    put("db_password", account.dbPassword)
+                    put("account_email", account.accountEmail)
+                    put("account_password", account.accountPassword)
                     put("routing_tag", account.routingTag)
                     put("is_active", account.isActive)
                 }.toString()

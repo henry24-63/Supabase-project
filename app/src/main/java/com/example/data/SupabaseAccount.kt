@@ -19,7 +19,12 @@ data class SupabaseAccount(
     val anonKey: String = "",
     @param:Json(name = "db_connection_string")
     val dbConnectionString: String = "",
-    val databasePassword: String,
+    @param:Json(name = "db_password")
+    val dbPassword: String = "",
+    @param:Json(name = "account_email")
+    val accountEmail: String = "",
+    @param:Json(name = "account_password")
+    val accountPassword: String = "",
     @param:Json(name = "routing_tag")
     val routingTag: String = "",
     @param:Json(name = "is_active")

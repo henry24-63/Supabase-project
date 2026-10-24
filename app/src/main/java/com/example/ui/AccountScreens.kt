@@ -895,6 +895,24 @@ fun AccountItemCard(
                 }
             }
 
+            if (account.accountEmail.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    color = DarkBg,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Account Email:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(text = account.accountEmail, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = Color.White)
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             // ================= DEDICATED ACTION BUTTONS FOR THIS ACCOUNT =================
@@ -1257,6 +1275,8 @@ fun AddAccountScreen(
     var publishableKey by remember { mutableStateOf("") }
     var secretKey by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var accountEmail by remember { mutableStateOf("") }
+    var accountPassword by remember { mutableStateOf("") }
     var routingTag by remember { mutableStateOf("") }
     var showHelp by remember { mutableStateOf(false) }
 
@@ -1427,6 +1447,25 @@ fun AddAccountScreen(
                                 if (passMatch != null && passMatch.groupValues[1].isNotBlank() && pass.isBlank()) {
                                     pass = passMatch.groupValues[1].trim().trim('\'', '"')
                                 }
+
+                                val emailMatch = Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", RegexOption.IGNORE_CASE).find(rawData)
+                                if (emailMatch != null) {
+                                    accountEmail = emailMatch.value.trim()
+                                }
+
+                                val accPassMatch = Regex("(?:Account\\s*password|login\\s*password|user\\s*password)\\s*[:\\s]*([^\\n\\r]+)", RegexOption.IGNORE_CASE).find(rawData)
+                                if (accPassMatch != null && accPassMatch.groupValues[1].isNotBlank()) {
+                                    accountPassword = accPassMatch.groupValues[1].trim().trim('\'', '"')
+                                } else if (rawData.contains("@") && rawData.lines().size >= 2) {
+                                    val lines = rawData.lines().map { it.trim() }.filter { it.isNotBlank() }
+                                    val emailIdx = lines.indexOfFirst { it.contains("@") && !it.contains("http") }
+                                    if (emailIdx != -1 && emailIdx + 1 < lines.size) {
+                                        val candidatePass = lines[emailIdx + 1]
+                                        if (!candidatePass.startsWith("http") && candidatePass.length < 50 && !candidatePass.contains(" ")) {
+                                            accountPassword = candidatePass
+                                        }
+                                    }
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
@@ -1462,6 +1501,27 @@ fun AddAccountScreen(
                         label = { Text("Project Name / Alias") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = accountEmail,
+                        onValueChange = { accountEmail = it },
+                        label = { Text("Account Login Email") },
+                        singleLine = true,
+                        placeholder = { Text("e.g. user@gmail.com") },
+                        modifier = Modifier.fillMaxWidth().testTag("account_email_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = accountPassword,
+                        onValueChange = { accountPassword = it },
+                        label = { Text("Account Login Password") },
+                        singleLine = true,
+                        placeholder = { Text("Account Login Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().testTag("account_password_input"),
                         shape = RoundedCornerShape(12.dp)
                     )
 
@@ -1598,7 +1658,7 @@ fun AddAccountScreen(
                                 Button(
                                     onClick = {
                                         val activeKey = secretKey.ifBlank { publishableKey.ifBlank { key } }
-                                        viewModel.saveAccountDirectly(name, url, activeKey, pass, routingTag, publishableKey, secretKey) {
+                                        viewModel.saveAccountDirectly(name, url, activeKey, pass, routingTag, publishableKey, secretKey, accountEmail, accountPassword) {
                                             onNavigateBack()
                                         }
                                     },
@@ -1645,7 +1705,7 @@ fun AddAccountScreen(
                 Button(
                     onClick = {
                         val activeKey = secretKey.ifBlank { publishableKey.ifBlank { key } }
-                        viewModel.testAndSaveAccount(name, url, activeKey, pass, routingTag, publishableKey, secretKey) {
+                        viewModel.testAndSaveAccount(name, url, activeKey, pass, routingTag, publishableKey, secretKey, accountEmail, accountPassword) {
                             onNavigateBack()
                         }
                     },
