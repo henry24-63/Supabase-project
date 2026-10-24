@@ -107,6 +107,84 @@ export default {
       }
     }
 
+    // 3. API ACCOUNTS ROUTE (/api/accounts)
+    if (url.pathname === '/api/accounts' || url.pathname === '/api/accounts/') {
+      if (method === 'GET') {
+        const { data, error } = await supabase.from('supabase_accounts').select('*');
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify(data || []), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'POST') {
+        const reqBody = await request.json().catch(() => ({}));
+        const { data, error } = await supabase.from('supabase_accounts').insert([reqBody]).select();
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'PATCH') {
+        const id = url.searchParams.get('id');
+        const reqBody = await request.json().catch(() => ({}));
+        if (!id) return new Response(JSON.stringify({ error: 'id required' }), { status: 400, headers: corsHeaders });
+        const { data, error } = await supabase.from('supabase_accounts').update(reqBody).eq('id', id).select();
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'DELETE') {
+        const id = url.searchParams.get('id');
+        const urlParam = url.searchParams.get('url');
+        if (id) {
+          await supabase.from('supabase_accounts').delete().eq('id', id);
+        }
+        if (urlParam) {
+          await supabase.from('supabase_accounts').delete().eq('project_url', urlParam);
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+      }
+    }
+
+    // 4. API MASTER KEYS ROUTE (/api/keys)
+    if (url.pathname === '/api/keys' || url.pathname === '/api/keys/') {
+      if (method === 'GET') {
+        const { data, error } = await supabase.from('supabase_master_keys').select('*');
+        if (error) {
+          return new Response(JSON.stringify([]), { status: 200, headers: corsHeaders });
+        }
+        return new Response(JSON.stringify(data || []), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'POST') {
+        const reqBody = await request.json().catch(() => ({}));
+        const keyRecord = {
+          key: reqBody.key,
+          name: reqBody.name || 'Master Router Key',
+          status: reqBody.status || 'ACTIVE',
+          destination: reqBody.destination || 'All Accounts',
+          created: reqBody.created || new Date().toISOString().split('T')[0],
+          connected_account_ids: reqBody.connected_account_ids || [],
+          connected_account_names: reqBody.connected_account_names || []
+        };
+        const { data, error } = await supabase.from('supabase_master_keys').upsert([keyRecord]).select();
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify(data || keyRecord), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'PATCH') {
+        const keyParam = url.searchParams.get('key');
+        const reqBody = await request.json().catch(() => ({}));
+        const targetKey = keyParam || reqBody.key;
+        if (!targetKey) return new Response(JSON.stringify({ error: 'key required' }), { status: 400, headers: corsHeaders });
+        const { data, error } = await supabase.from('supabase_master_keys').update(reqBody).eq('key', targetKey).select();
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify(data || reqBody), { status: 200, headers: corsHeaders });
+      }
+      if (method === 'DELETE') {
+        const keyParam = url.searchParams.get('key');
+        const reqBody = await request.json().catch(() => ({}));
+        const targetKey = keyParam || reqBody.key;
+        if (targetKey) {
+          await supabase.from('supabase_master_keys').delete().eq('key', targetKey);
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+      }
+    }
+
     // 3. PROXY / QUERY / READ / WRITE ROUTING
     let body = {};
     try {

@@ -845,7 +845,7 @@
       loadCachedAccounts();
       loadCachedMasterKeys();
       await fetchAccounts();
-      renderMasterKeys();
+      await fetchMasterKeys();
     }
 
     function loadCachedAccounts() {
@@ -1972,6 +1972,55 @@ to '${acc.name}' without scanning any other accounts!
       } catch(e) {}
     }
 
+    async function fetchMasterKeys() {
+      loadCachedMasterKeys();
+      let keys = null;
+
+      // 1. Try API keys endpoint
+      try {
+        const res = await fetch('/api/keys');
+        if (res.ok) {
+          keys = await res.json();
+        }
+      } catch (err) {
+        console.warn('API /api/keys notice:', err);
+      }
+
+      // 2. Direct Supabase REST Fallback
+      if (!keys || !Array.isArray(keys) || keys.length === 0) {
+        try {
+          const directRes = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?select=*`, {
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+          if (directRes.ok) {
+            const remoteData = await directRes.json();
+            if (Array.isArray(remoteData) && remoteData.length > 0) {
+              keys = remoteData;
+            }
+          }
+        } catch (fbErr) {
+          console.warn('Direct master keys fetch notice:', fbErr);
+        }
+      }
+
+      if (Array.isArray(keys) && keys.length > 0) {
+        // Filter legacy key
+        keys = keys.filter(k => k.key !== 'omni_live_master_default_2026');
+        // Merge remote keys with local state keys (dedup by key string)
+        const map = new Map();
+        keys.forEach(k => map.set(k.key, k));
+        state.masterKeys.forEach(k => {
+          if (k.key !== 'omni_live_master_default_2026') map.set(k.key, k);
+        });
+        state.masterKeys = Array.from(map.values());
+        saveMasterKeysCache();
+      }
+      renderMasterKeys();
+    }
+
     function saveMasterKeysCache() {
       try {
         localStorage.setItem('ott_master_keys', JSON.stringify(state.masterKeys));
@@ -2189,38 +2238,101 @@ to '${acc.name}' without scanning any other accounts!
         destinationSummary = selectedAccounts.map(a => a.name).join(', ');
       }
 
-      state.masterKeys.push({
+      const keyPayload = {
         key: newKey,
         name: name,
         created: new Date().toISOString().split('T')[0],
         status: 'ACTIVE',
-        destination: destinationSummary
-      });
+        destination: destinationSummary,
+        connected_account_ids: selectedAccounts.map(a => a.name),
+        connected_account_names: selectedAccounts.map(a => a.name)
+      };
+
+      state.masterKeys.unshift(keyPayload);
 
       saveMasterKeysCache();
       renderMasterKeys();
       closeMasterKeyModal();
       submitBtn.disabled = false;
       showToast('🔑 Master Key pre-tested and generated successfully!', 'success');
+
+      // Cloud Persistence
+      try {
+        await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(keyPayload)
+        });
+      } catch (err) {}
+
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys`, {
+          method: 'POST',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(keyPayload)
+        });
+      } catch (err) {}
     }
 
-    function deleteMasterKey(index) {
-      const key = state.masterKeys[index];
-      if (!key) return;
-      if (!confirm(`Permanently delete master key '${key.name}'?`)) return;
+    async function deleteMasterKey(index) {
+      const k = state.masterKeys[index];
+      if (!k) return;
+      if (!confirm(`Permanently delete master key '${k.name}'?`)) return;
 
+      const targetKey = k.key;
       state.masterKeys.splice(index, 1);
       saveMasterKeysCache();
       renderMasterKeys();
+
+      try {
+        await fetch(`/api/keys?key=${encodeURIComponent(targetKey)}`, { method: 'DELETE' });
+      } catch (e) {}
+
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?key=eq.${encodeURIComponent(targetKey)}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+          }
+        });
+      } catch (e) {}
+
       showToast('🗑️ Master Key deleted permanently!', 'success');
     }
 
-    function revokeMasterKey(index) {
+    async function revokeMasterKey(index) {
       const k = state.masterKeys[index];
       if (!k) return;
       k.status = k.status === 'REVOKED' ? 'ACTIVE' : 'REVOKED';
       saveMasterKeysCache();
       renderMasterKeys();
+
+      try {
+        await fetch(`/api/keys?key=${encodeURIComponent(k.key)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: k.status })
+        });
+      } catch (e) {}
+
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?key=eq.${encodeURIComponent(k.key)}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: k.status })
+        });
+      } catch (e) {}
+
       showToast(`Master Key '${k.name}' status changed to ${k.status}`, 'info');
     }
 

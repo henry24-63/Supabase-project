@@ -6,7 +6,12 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey as CryptoMasterKey
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.net.URLEncoder
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -310,20 +315,12 @@ class EncryptedSupabaseAccountRepository(private val context: Context) : Supabas
             Log.w(tag, "Error reading master_keys from encryptedPrefs", e)
         }
 
+        // Filter out legacy default key if present
+        combined.removeAll { it.key == "omni_live_master_default_2026" }
+
         val distinctKeys = combined.distinctBy { it.key }.toMutableList()
 
-        if (distinctKeys.isEmpty()) {
-            // Seed default master key
-            val defaultKey = MasterKey(
-                key = "omni_live_master_default_2026",
-                name = "Primary Master Key",
-                created = "2026-10-22",
-                status = "ACTIVE",
-                rateLimit = "UNLIMITED",
-                connectedAccountIds = emptyList(),
-                connectedAccountNames = emptyList()
-            )
-            distinctKeys.add(defaultKey)
+        if (distinctKeys.isNotEmpty()) {
             writeMasterKeysToAllStorages(distinctKeys)
         }
 
@@ -335,12 +332,19 @@ class EncryptedSupabaseAccountRepository(private val context: Context) : Supabas
         keys.removeAll { it.key == masterKey.key }
         keys.add(0, masterKey)
         writeMasterKeysToAllStorages(keys)
+        syncMasterKeyToRemote(masterKey, "POST")
     }
 
     fun deleteMasterKey(key: String) {
         val keys = getAllMasterKeys().toMutableList()
+        val toDelete = keys.find { it.key == key }
         keys.removeAll { it.key == key }
         writeMasterKeysToAllStorages(keys)
+        if (toDelete != null) {
+            syncMasterKeyToRemote(toDelete, "DELETE")
+        } else {
+            syncMasterKeyToRemote(MasterKey(key = key, name = "", created = ""), "DELETE")
+        }
     }
 
     fun toggleMasterKeyStatus(key: String): MasterKey? {
@@ -353,6 +357,7 @@ class EncryptedSupabaseAccountRepository(private val context: Context) : Supabas
             )
             keys[index] = updated
             writeMasterKeysToAllStorages(keys)
+            syncMasterKeyToRemote(updated, "PATCH")
             return updated
         }
         return null
@@ -382,7 +387,86 @@ class EncryptedSupabaseAccountRepository(private val context: Context) : Supabas
         val keys = getAllMasterKeys().toMutableList()
         keys.add(0, record)
         writeMasterKeysToAllStorages(keys)
+        syncMasterKeyToRemote(record, "POST")
         return record
+    }
+
+    private fun syncMasterKeyToRemote(masterKey: MasterKey, action: String) {
+        Thread {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+                val jsonBody = masterKeyAdapter.toJson(listOf(masterKey))
+                val singleJson = if (jsonBody.startsWith("[") && jsonBody.endsWith("]")) {
+                    jsonBody.substring(1, jsonBody.length - 1)
+                } else jsonBody
+
+                if (action == "POST" || action == "UPSERT") {
+                    try {
+                        val req1 = Request.Builder()
+                            .url(AppConstants.API_KEYS_URL)
+                            .post(singleJson.toRequestBody(jsonMediaType))
+                            .build()
+                        client.newCall(req1).execute().close()
+                    } catch (e: Exception) {}
+
+                    try {
+                        val req2 = Request.Builder()
+                            .url("${AppConstants.MASTER_URL}/rest/v1/supabase_master_keys")
+                            .header("apikey", AppConstants.MASTER_KEY)
+                            .header("Authorization", "Bearer ${AppConstants.MASTER_KEY}")
+                            .header("Prefer", "return=representation")
+                            .post(singleJson.toRequestBody(jsonMediaType))
+                            .build()
+                        client.newCall(req2).execute().close()
+                    } catch (e: Exception) {}
+                } else if (action == "DELETE") {
+                    try {
+                        val req1 = Request.Builder()
+                            .url("${AppConstants.API_KEYS_URL}?key=${URLEncoder.encode(masterKey.key, "UTF-8")}")
+                            .delete()
+                            .build()
+                        client.newCall(req1).execute().close()
+                    } catch (e: Exception) {}
+
+                    try {
+                        val req2 = Request.Builder()
+                            .url("${AppConstants.MASTER_URL}/rest/v1/supabase_master_keys?key=eq.${URLEncoder.encode(masterKey.key, "UTF-8")}")
+                            .header("apikey", AppConstants.MASTER_KEY)
+                            .header("Authorization", "Bearer ${AppConstants.MASTER_KEY}")
+                            .delete()
+                            .build()
+                        client.newCall(req2).execute().close()
+                    } catch (e: Exception) {}
+                } else if (action == "PATCH") {
+                    val statusJson = "{\"status\":\"${masterKey.status}\"}"
+                    try {
+                        val req1 = Request.Builder()
+                            .url("${AppConstants.API_KEYS_URL}?key=${URLEncoder.encode(masterKey.key, "UTF-8")}")
+                            .patch(statusJson.toRequestBody(jsonMediaType))
+                            .build()
+                        client.newCall(req1).execute().close()
+                    } catch (e: Exception) {}
+
+                    try {
+                        val req2 = Request.Builder()
+                            .url("${AppConstants.MASTER_URL}/rest/v1/supabase_master_keys?key=eq.${URLEncoder.encode(masterKey.key, "UTF-8")}")
+                            .header("apikey", AppConstants.MASTER_KEY)
+                            .header("Authorization", "Bearer ${AppConstants.MASTER_KEY}")
+                            .header("Content-Type", "application/json")
+                            .patch(statusJson.toRequestBody(jsonMediaType))
+                            .build()
+                        client.newCall(req2).execute().close()
+                    } catch (e: Exception) {}
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "syncMasterKeyToRemote exception: ${e.message}")
+            }
+        }.start()
     }
 
     private fun writeMasterKeysToAllStorages(keys: List<MasterKey>) {
