@@ -33,6 +33,21 @@ export default {
 
     const action = url.searchParams.get('action');
 
+    // Root Welcome Status
+    if (url.pathname === '/' && !action && !request.headers.get('Authorization') && !request.headers.get('x-target-account') && !request.headers.get('x-project-name')) {
+      return new Response(JSON.stringify({
+        status: "ONLINE",
+        service: "OTT Multi-Supabase Proxy Gateway (Cloudflare Worker)",
+        version: "2.6.0",
+        message: "Gateway is active and healthy.",
+        endpoints: {
+          diagnose: "/?action=diagnose&url=<supabase_url>&key=<api_key>",
+          ping: "/?action=ping",
+          proxyQuery: "POST / with Authorization: Bearer <master_key>"
+        }
+      }, null, 2), { status: 200, headers: corsHeaders });
+    }
+
     // 1. DIAGNOSE ACTION
     if (action === 'diagnose' || action === 'test') {
       const testUrl = url.searchParams.get('url');
@@ -107,7 +122,7 @@ export default {
     const accountId = request.headers.get('x-account-id') || url.searchParams.get('accountId');
     const rawTag = request.headers.get('x-account-tag') || request.headers.get('x-target-account') || url.searchParams.get('tag') || body.tag;
     const cleanTag = rawTag ? rawTag.trim().replace(/^#/, '') : null;
-    const subPath = (url.searchParams.get('path') || '').replace(/^\/+/, '') || '';
+    const subPath = (url.searchParams.get('path') || url.pathname.replace(/^\/+/, '') || '').replace(/^api\/proxy\/?/, '').replace(/^\/+/, '') || '';
 
     let effectiveSubPath = subPath;
     let effectiveMethod = method;
@@ -126,6 +141,14 @@ export default {
       } else if (body.action === 'query' && body.path) {
         effectiveSubPath = body.path.replace(/^\/+/, '');
       }
+    }
+
+    if (!effectiveSubPath) {
+      return new Response(JSON.stringify({
+        status: "ONLINE",
+        service: "OTT Multi-Supabase Proxy Gateway",
+        message: "Proxy ready. Please specify a table path or action (e.g. table in action payload)."
+      }, null, 2), { status: 200, headers: corsHeaders });
     }
 
     if ((!projectName || projectName.toLowerCase() === 'all') && !accountId && !cleanTag) {
