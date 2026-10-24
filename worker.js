@@ -143,6 +143,15 @@ export default {
 
       if (method === 'POST') {
         const reqBody = await request.json().catch(() => ({}));
+        if (!reqBody.service_role_key && (reqBody.secret_key || reqBody.api_key)) {
+          reqBody.service_role_key = reqBody.secret_key || reqBody.api_key;
+        }
+        if (!reqBody.secret_key && reqBody.service_role_key) {
+          reqBody.secret_key = reqBody.service_role_key;
+        }
+        if (!reqBody.api_key) {
+          reqBody.api_key = reqBody.service_role_key || reqBody.secret_key || reqBody.publishable_key;
+        }
         
         // 1. Ensure master database table and columns exist
         await ensureMasterDatabaseSchema(MASTER_URL, MASTER_KEY, env);
@@ -1952,13 +1961,23 @@ function parseRawSupabaseCredentials(raw) {
     db_connection_string = `postgresql://postgres:${encPass}@db.${ref}.supabase.co:5432/postgres`;
   }
 
+  if (!service_role_key && secret_key) {
+    service_role_key = secret_key;
+  }
+  if (!secret_key && service_role_key) {
+    secret_key = service_role_key;
+  }
+  if (!service_role_key && publishable_key && publishable_key.startsWith('eyJ')) {
+    service_role_key = publishable_key;
+  }
+
   return {
     project_name,
     project_url,
     publishable_key,
     secret_key,
     anon_key,
-    service_role_key: service_role_key || secret_key,
+    service_role_key: service_role_key || secret_key || publishable_key,
     api_key: secret_key || publishable_key,
     db_connection_string,
     db_password
