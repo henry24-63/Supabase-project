@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import htmlContent from './index.html';
+import postgres from 'postgres';
+import pg from 'pg';
 
 export default {
   async fetch(request, env, ctx) {
@@ -566,9 +568,136 @@ export default {
 };
 
 // ================= SQL & HELPER UTILITIES =================
+function parsePostgresDetails(connStr, dbPass, projectUrl) {
+  let user = 'postgres';
+  let password = (dbPass || '').trim();
+  let host = '';
+  let port = 5432;
+  let database = 'postgres';
+  let projectRef = '';
+
+  if (projectUrl) {
+    try {
+      const u = new URL(projectUrl);
+      projectRef = u.hostname.split('.')[0];
+      if (projectRef) host = `db.${projectRef}.supabase.co`;
+    } catch (e) {}
+  }
+
+  let str = (connStr || '').trim();
+  if (str) {
+    if (password) {
+      str = str.replace(/\[YOUR-PASSWORD\]/gi, encodeURIComponent(password))
+               .replace(/\[PASSWORD\]/gi, encodeURIComponent(password));
+    }
+
+    try {
+      const validUri = str.match(/^postgres(?:ql)?:\/\//i) ? str : `postgresql://${str}`;
+      const parsed = new URL(validUri);
+      if (parsed.username) user = decodeURIComponent(parsed.username);
+      if (parsed.password && parsed.password !== '[YOUR-PASSWORD]' && parsed.password !== '[PASSWORD]') {
+        password = decodeURIComponent(parsed.password);
+      }
+      if (parsed.hostname) host = parsed.hostname;
+      if (parsed.port) port = parseInt(parsed.port, 10);
+      if (parsed.pathname && parsed.pathname.length > 1) {
+        database = parsed.pathname.replace(/^\//, '');
+      }
+    } catch (e) {
+      const match = str.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/i);
+      if (match) {
+        user = decodeURIComponent(match[1]);
+        if (match[2] !== '[YOUR-PASSWORD]' && match[2] !== '[PASSWORD]') {
+          password = decodeURIComponent(match[2]);
+        }
+        host = match[3];
+        port = parseInt(match[4], 10);
+        database = match[5];
+      }
+    }
+  }
+
+  if (!projectRef && host) {
+    if (host.startsWith('db.')) {
+      projectRef = host.split('.')[1];
+    } else if (user.includes('.')) {
+      projectRef = user.split('.')[1];
+    }
+  }
+
+  if (projectRef && !host) {
+    host = `db.${projectRef}.supabase.co`;
+  }
+
+  return { user, password, host, port, database, projectRef };
+}
+
+async function executeSqlDirectPostgres(targetAccount, cleanSql) {
+  const connStr = targetAccount.db_connection_string || '';
+  const password = targetAccount.db_password || '';
+  const projectUrl = targetAccount.project_url || '';
+
+  const parsed = parsePostgresDetails(connStr, password, projectUrl);
+  if (!parsed || !parsed.host || !parsed.password) {
+    return { success: false, reason: 'Incomplete database connection credentials (missing host or password)' };
+  }
+
+  // 1. Try with postgres client library
+  try {
+    const sqlClient = postgres({
+      host: parsed.host,
+      port: parsed.port || 5432,
+      database: parsed.database || 'postgres',
+      username: parsed.user || 'postgres',
+      password: parsed.password,
+      ssl: { rejectUnauthorized: false },
+      connect_timeout: 8,
+      idle_timeout: 5
+    });
+
+    const rows = await sqlClient.unsafe(cleanSql);
+    await sqlClient.end({ timeout: 2 }).catch(() => {});
+
+    return {
+      success: true,
+      method: 'postgres_direct_tcp',
+      result: Array.isArray(rows) ? rows : [rows],
+      sqlExecuted: cleanSql
+    };
+  } catch (err1) {
+    // 2. Try with pg client
+    try {
+      const client = new pg.Client({
+        host: parsed.host,
+        port: parsed.port || 5432,
+        database: parsed.database || 'postgres',
+        user: parsed.user || 'postgres',
+        password: parsed.password,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 8000
+      });
+      await client.connect();
+      const res = await client.query(cleanSql);
+      await client.end().catch(() => {});
+
+      return {
+        success: true,
+        method: 'pg_client_tcp',
+        result: res.rows || [{ rowCount: res.rowCount, command: res.command }],
+        sqlExecuted: cleanSql
+      };
+    } catch (err2) {
+      return {
+        success: false,
+        reason: `Postgres TCP error: ${err1.message || err2.message}`
+      };
+    }
+  }
+}
+
 async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
   const cleanSql = sqlQuery.trim();
-  const serviceKey = targetAccount.secret_key || targetAccount.service_role_key || (env && (env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY)) || targetAccount.publishable_key || targetAccount.api_key;
+  const serviceKey = targetAccount.secret_key || targetAccount.service_role_key || (env && (env.MASTER_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY)) || targetAccount.publishable_key || targetAccount.api_key;
   const projectUrl = (targetAccount.project_url || '').replace(/\/+$/, '');
   
   let projectRef = targetAccount.project_ref || targetAccount.ref || '';
@@ -579,7 +708,13 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 1. Supabase Management API / DB Query endpoint
+  // 1. Attempt Direct PostgreSQL execution using db_connection_string / db_password
+  const directPgRes = await executeSqlDirectPostgres(targetAccount, cleanSql);
+  if (directPgRes.success) {
+    return directPgRes;
+  }
+
+  // 2. Supabase Management API / DB Query endpoint
   if (projectRef && serviceKey) {
     try {
       const mgmtRes = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/db/query`, {
@@ -602,7 +737,7 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 2. Supabase SQL / PG query endpoints
+  // 3. Supabase SQL / PG query HTTP endpoints
   const sqlEndpoints = [
     `${projectUrl}/sql`,
     `${projectUrl}/pg`,
@@ -633,7 +768,7 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 3. PostgREST RPC endpoints
+  // 4. PostgREST RPC endpoints
   const rpcEndpoints = [
     `${projectUrl}/rest/v1/rpc/exec_sql`,
     `${projectUrl}/rest/v1/rpc/sql`,
@@ -664,11 +799,11 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 4. Default Failure Response if no SQL endpoint responded successfully
+  // 5. Default Failure Response if no SQL endpoint responded successfully
   return {
     success: false,
     status: "NO_SQL_ENDPOINT",
-    error: "Direct SQL execution endpoint not exposed or reachable on target Supabase project.",
+    error: directPgRes.reason || "Direct SQL execution failed on target Supabase database. Please check db_connection_string and db_password.",
     sqlExecuted: cleanSql
   };
 }
