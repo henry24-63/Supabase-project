@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import htmlContent from './index.html';
-import postgres from 'postgres';
 import pg from 'pg';
+import postgres from 'postgres';
+import { connect } from 'cloudflare:sockets';
 
 export default {
   async fetch(request, env, ctx) {
@@ -285,13 +286,27 @@ export default {
     let accounts = [];
     try {
       const { data: dbAccs, error } = await supabase.from('supabase_accounts').select('*');
-      if (!error && dbAccs) {
+      if (!error && dbAccs && dbAccs.length > 0) {
         accounts = dbAccs.filter(a => a.is_active !== false);
       }
     } catch (e) {}
 
+    // Fallback: Fetch directly via REST if supabase-js query returned empty
     if (accounts.length === 0) {
-      return new Response(JSON.stringify({ error: 'No connected Supabase accounts found in master database.' }), { status: 404, headers: corsHeaders });
+      try {
+        const directRes = await fetch(`${MASTER_URL.replace(/\/+$/, '')}/rest/v1/supabase_accounts?select=*`, {
+          headers: {
+            'apikey': MASTER_KEY,
+            'Authorization': `Bearer ${MASTER_KEY}`
+          }
+        });
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (Array.isArray(directData)) {
+            accounts = directData.filter(a => a.is_active !== false);
+          }
+        }
+      } catch (e) {}
     }
 
     // Determine target account(s)
@@ -314,9 +329,27 @@ export default {
       if (found) targetAccounts = [found];
     }
 
+    // Allow explicit direct connection in request body if targetAccounts is still empty
+    if (targetAccounts.length === 0 && (body.db_connection_string || (body.project_url && (body.db_password || body.password)))) {
+      targetAccounts = [{
+        name: body.projectName || body.project_name || 'Direct Postgres Connection',
+        project_url: body.project_url || '',
+        db_connection_string: body.db_connection_string || '',
+        db_password: body.db_password || body.password || '',
+        secret_key: body.secret_key || body.service_role_key || '',
+        service_role_key: body.service_role_key || body.secret_key || '',
+        publishable_key: body.publishable_key || '',
+        api_key: body.api_key || body.secret_key || ''
+      }];
+    }
+
     if (targetAccounts.length === 0) {
       // Default to all accounts if universal or target not specified
       targetAccounts = accounts;
+    }
+
+    if (targetAccounts.length === 0) {
+      return new Response(JSON.stringify({ error: 'No connected Supabase accounts found in master database. Please connect an account or provide db_connection_string in payload.' }), { status: 404, headers: corsHeaders });
     }
 
     const reqAction = body.action || url.searchParams.get('action');
@@ -329,7 +362,14 @@ export default {
       }
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
-        const res = await attemptExecuteSql(acc, sqlQuery, env);
+        const effectiveAcc = {
+          ...acc,
+          db_connection_string: body.db_connection_string || body.connection_string || acc.db_connection_string,
+          db_password: body.db_password || body.password || acc.db_password,
+          secret_key: body.secret_key || body.service_role_key || acc.secret_key,
+          service_role_key: body.service_role_key || acc.service_role_key
+        };
+        const res = await attemptExecuteSql(effectiveAcc, sqlQuery, env);
         return { account: acc.name, routingTag: acc.routing_tag || acc.name, ...res };
       }));
 
@@ -350,7 +390,14 @@ export default {
       const autoSql = generateCreateTableFromCols(tableName, cols);
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
-        const res = await attemptExecuteSql(acc, autoSql, env);
+        const effectiveAcc = {
+          ...acc,
+          db_connection_string: body.db_connection_string || body.connection_string || acc.db_connection_string,
+          db_password: body.db_password || body.password || acc.db_password,
+          secret_key: body.secret_key || body.service_role_key || acc.secret_key,
+          service_role_key: body.service_role_key || acc.service_role_key
+        };
+        const res = await attemptExecuteSql(effectiveAcc, autoSql, env);
         return { account: acc.name, routingTag: acc.routing_tag || acc.name, ...res };
       }));
 
@@ -374,7 +421,14 @@ export default {
       const alterSql = `ALTER TABLE public."${tableName.replace(/[^a-zA-Z0-9_]/g, '')}" ADD COLUMN IF NOT EXISTS "${colName.replace(/[^a-zA-Z0-9_]/g, '')}" ${colType};`;
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
-        const res = await attemptExecuteSql(acc, alterSql, env);
+        const effectiveAcc = {
+          ...acc,
+          db_connection_string: body.db_connection_string || body.connection_string || acc.db_connection_string,
+          db_password: body.db_password || body.password || acc.db_password,
+          secret_key: body.secret_key || body.service_role_key || acc.secret_key,
+          service_role_key: body.service_role_key || acc.service_role_key
+        };
+        const res = await attemptExecuteSql(effectiveAcc, alterSql, env);
         return { account: acc.name, routingTag: acc.routing_tag || acc.name, ...res };
       }));
 
@@ -396,7 +450,14 @@ export default {
       const dropSql = `DROP TABLE IF EXISTS public."${tableName.replace(/[^a-zA-Z0-9_]/g, '')}" CASCADE;`;
 
       const results = await Promise.all(targetAccounts.map(async (acc) => {
-        const res = await attemptExecuteSql(acc, dropSql, env);
+        const effectiveAcc = {
+          ...acc,
+          db_connection_string: body.db_connection_string || body.connection_string || acc.db_connection_string,
+          db_password: body.db_password || body.password || acc.db_password,
+          secret_key: body.secret_key || body.service_role_key || acc.secret_key,
+          service_role_key: body.service_role_key || acc.service_role_key
+        };
+        const res = await attemptExecuteSql(effectiveAcc, dropSql, env);
         return { account: acc.name, routingTag: acc.routing_tag || acc.name, ...res };
       }));
 
@@ -587,33 +648,50 @@ function parsePostgresDetails(connStr, dbPass, projectUrl) {
   let str = (connStr || '').trim();
   if (str) {
     if (password) {
-      str = str.replace(/\[YOUR-PASSWORD\]/gi, encodeURIComponent(password))
-               .replace(/\[PASSWORD\]/gi, encodeURIComponent(password));
+      str = str.replace(/\[YOUR[-_]PASSWORD\]/gi, password)
+               .replace(/\[PASSWORD\]/gi, password);
     }
 
-    try {
-      const validUri = str.match(/^postgres(?:ql)?:\/\//i) ? str : `postgresql://${str}`;
-      const parsed = new URL(validUri);
-      if (parsed.username) user = decodeURIComponent(parsed.username);
-      if (parsed.password && parsed.password !== '[YOUR-PASSWORD]' && parsed.password !== '[PASSWORD]') {
-        password = decodeURIComponent(parsed.password);
-      }
-      if (parsed.hostname) host = parsed.hostname;
-      if (parsed.port) port = parseInt(parsed.port, 10);
-      if (parsed.pathname && parsed.pathname.length > 1) {
-        database = parsed.pathname.replace(/^\//, '');
-      }
-    } catch (e) {
-      const match = str.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/i);
-      if (match) {
-        user = decodeURIComponent(match[1]);
-        if (match[2] !== '[YOUR-PASSWORD]' && match[2] !== '[PASSWORD]') {
-          password = decodeURIComponent(match[2]);
+    // Match by finding the host at the end: @<hostname>[:<port>]/<database>
+    const hostMatch = str.match(/@([a-zA-Z0-9.-]+)(?::(\d+))?(?:\/([a-zA-Z0-9_.-]+))?(?:\?.*)?$/);
+    if (hostMatch) {
+      host = hostMatch[1];
+      if (hostMatch[2]) port = parseInt(hostMatch[2], 10);
+      if (hostMatch[3]) database = hostMatch[3];
+
+      // Extract user and pass from the part before the last '@'
+      const prefixMatch = str.match(/postgres(?:ql)?:\/\/([^@]+)@/);
+      if (prefixMatch && prefixMatch[1]) {
+        const userPass = prefixMatch[1];
+        const colonIdx = userPass.indexOf(':');
+        if (colonIdx !== -1) {
+          user = decodeURIComponent(userPass.slice(0, colonIdx));
+          const extractedPass = userPass.slice(colonIdx + 1);
+          if (!password && extractedPass && !extractedPass.includes('[YOUR-PASSWORD]')) {
+            try {
+              password = decodeURIComponent(extractedPass);
+            } catch (e) {
+              password = extractedPass;
+            }
+          }
+        } else {
+          user = decodeURIComponent(userPass);
         }
-        host = match[3];
-        port = parseInt(match[4], 10);
-        database = match[5];
       }
+    } else {
+      try {
+        const validUri = str.match(/^postgres(?:ql)?:\/\//i) ? str : `postgresql://${str}`;
+        const parsed = new URL(validUri);
+        if (parsed.username) user = decodeURIComponent(parsed.username);
+        if (!password && parsed.password && !parsed.password.includes('[YOUR-PASSWORD]')) {
+          password = decodeURIComponent(parsed.password);
+        }
+        if (parsed.hostname) host = parsed.hostname;
+        if (parsed.port) port = parseInt(parsed.port, 10);
+        if (parsed.pathname && parsed.pathname.length > 1) {
+          database = parsed.pathname.replace(/^\//, '');
+        }
+      } catch (e) {}
     }
   }
 
@@ -633,66 +711,100 @@ function parsePostgresDetails(connStr, dbPass, projectUrl) {
 }
 
 async function executeSqlDirectPostgres(targetAccount, cleanSql) {
-  const connStr = targetAccount.db_connection_string || '';
-  const password = targetAccount.db_password || '';
+  const connStr = targetAccount.db_connection_string || targetAccount.connection_string || '';
+  const password = targetAccount.db_password || targetAccount.password || '';
   const projectUrl = targetAccount.project_url || '';
 
   const parsed = parsePostgresDetails(connStr, password, projectUrl);
   if (!parsed || !parsed.host || !parsed.password) {
-    return { success: false, reason: 'Incomplete database connection credentials (missing host or password)' };
+    const missing = [];
+    if (!parsed?.host) missing.push('Database Host');
+    if (!parsed?.password) missing.push('Database Password');
+    return {
+      success: false,
+      reason: `Incomplete DB connection credentials (Missing: ${missing.join(', ')}). Please provide Database Password.`
+    };
   }
 
-  // 1. Try with postgres client library
-  try {
-    const sqlClient = postgres({
+  const targetsToTry = [
+    { host: parsed.host, port: parsed.port || 5432, user: parsed.user || 'postgres' }
+  ];
+
+  // If host is db.<ref>.supabase.co, also add port 6543 (transaction pooler) as fallback
+  if (parsed.host.startsWith('db.') && parsed.projectRef) {
+    targetsToTry.push({
       host: parsed.host,
-      port: parsed.port || 5432,
-      database: parsed.database || 'postgres',
-      username: parsed.user || 'postgres',
-      password: parsed.password,
-      ssl: { rejectUnauthorized: false },
-      connect_timeout: 8,
-      idle_timeout: 5
+      port: 6543,
+      user: parsed.user.includes('.') ? parsed.user : `postgres.${parsed.projectRef}`
     });
+  }
 
-    const rows = await sqlClient.unsafe(cleanSql);
-    await sqlClient.end({ timeout: 2 }).catch(() => {});
+  let lastError = null;
 
-    return {
-      success: true,
-      method: 'postgres_direct_tcp',
-      result: Array.isArray(rows) ? rows : [rows],
-      sqlExecuted: cleanSql
-    };
-  } catch (err1) {
-    // 2. Try with pg client
+  for (const target of targetsToTry) {
+    // 1. Try pg.Client (official Cloudflare Worker nodejs_compat supported)
     try {
       const client = new pg.Client({
-        host: parsed.host,
-        port: parsed.port || 5432,
+        host: target.host,
+        port: target.port,
         database: parsed.database || 'postgres',
-        user: parsed.user || 'postgres',
+        user: target.user,
         password: parsed.password,
         ssl: { rejectUnauthorized: false },
-        connectionTimeoutMillis: 8000
+        connectionTimeoutMillis: 10000
       });
+
       await client.connect();
       const res = await client.query(cleanSql);
       await client.end().catch(() => {});
 
+      const rows = res.rows || [];
       return {
         success: true,
-        method: 'pg_client_tcp',
-        result: res.rows || [{ rowCount: res.rowCount, command: res.command }],
+        method: `direct_postgres_pg_${target.port}`,
+        command: res.command || 'QUERY',
+        rowCount: res.rowCount !== undefined ? res.rowCount : rows.length,
+        result: rows.length > 0 ? rows : [{ status: 'success', command: res.command || 'EXECUTED', rowCount: res.rowCount || 0 }],
         sqlExecuted: cleanSql
       };
-    } catch (err2) {
+    } catch (pgErr) {
+      lastError = pgErr;
+    }
+
+    // 2. Try postgres client library
+    try {
+      const sqlClient = postgres({
+        host: target.host,
+        port: target.port,
+        database: parsed.database || 'postgres',
+        username: target.user,
+        password: parsed.password,
+        ssl: { rejectUnauthorized: false },
+        connect_timeout: 8,
+        idle_timeout: 4
+      });
+
+      const rows = await sqlClient.unsafe(cleanSql);
+      await sqlClient.end({ timeout: 2 }).catch(() => {});
+
+      const resultList = Array.isArray(rows) ? rows : [rows];
       return {
-        success: false,
-        reason: `Postgres TCP error: ${err1.message || err2.message}`
+        success: true,
+        method: `direct_postgres_lib_${target.port}`,
+        command: rows.command || 'QUERY',
+        rowCount: rows.count !== undefined ? rows.count : resultList.length,
+        result: resultList.length > 0 ? resultList : [{ status: 'success', rowCount: rows.count || 0 }],
+        sqlExecuted: cleanSql
       };
+    } catch (libErr) {
+      if (!lastError) lastError = libErr;
     }
   }
+
+  return {
+    success: false,
+    reason: `Direct PostgreSQL connection failed (${targetsToTry[0].host}:${targetsToTry[0].port}): ${lastError ? lastError.message : 'Connection failed'}`
+  };
 }
 
 async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
@@ -799,10 +911,10 @@ async function attemptExecuteSql(targetAccount, sqlQuery, env = {}) {
     } catch (e) {}
   }
 
-  // 5. Default Failure Response if no SQL endpoint responded successfully
+  // 5. Explicit Failure Response if all methods were exhausted
   return {
     success: false,
-    status: "NO_SQL_ENDPOINT",
+    status: "SQL_EXECUTION_FAILED",
     error: directPgRes.reason || "Direct SQL execution failed on target Supabase database. Please check db_connection_string and db_password.",
     sqlExecuted: cleanSql
   };
