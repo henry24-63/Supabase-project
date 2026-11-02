@@ -1,0 +1,2995 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTT Router | Master Supabase Proxy & Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+    .animate-pulse-slow { animation: pulse-slow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+    .shake-anim { animation: shake 0.4s ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- ==================== PROMINENT FLOATING TOAST ==================== -->
+  <div id="toast" class="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] transform -translate-y-24 opacity-0 transition-all duration-300 pointer-events-none w-[90%] max-w-md">
+    <div id="toastBox" class="bg-slate-900 border border-indigo-500/50 shadow-2xl shadow-indigo-950/80 rounded-2xl px-5 py-4 flex items-center gap-3 text-sm text-white">
+      <span id="toastIcon" class="text-xl">✅</span>
+      <span id="toastMsg" class="font-medium">Operation completed successfully</span>
+    </div>
+  </div>
+
+  <!-- ==================== SECURITY ACCESS GATEWAY ==================== -->
+  <div id="lockScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 transition-all duration-300">
+    <div id="lockCard" class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl shadow-indigo-950/50 relative overflow-hidden">
+      <!-- Glow effect -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="flex flex-col items-center text-center">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 mb-6">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+
+        <h2 class="text-2xl font-bold text-white tracking-tight">Security Verification</h2>
+        <p class="text-sm text-slate-400 mt-2 mb-6">Enter your Master Access Code to unlock the OTT Router & Supabase Management Dashboard.</p>
+
+        <form id="unlockForm" onsubmit="handleUnlock(event)" class="w-full space-y-4">
+          <div class="relative">
+            <input 
+              type="password" 
+              id="accessCodeInput" 
+              placeholder="Enter Access Code..." 
+              autocomplete="current-password"
+              class="w-full px-5 py-4 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mono text-center tracking-widest text-lg"
+              required
+            >
+            <button 
+              type="button" 
+              onclick="toggleCodeVisibility()" 
+              class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+            >
+              <svg id="eyeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div id="lockError" class="text-xs text-rose-400 hidden font-medium">
+            Incorrect Access Code. Please enter the master access code.
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold shadow-lg shadow-indigo-500/25 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <span>Unlock Dashboard</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN DASHBOARD ==================== -->
+  <div id="mainDashboard" class="hidden min-h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-bold text-white tracking-tight">OTT Router</h1>
+              <span class="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                ACTIVE
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 hidden sm:block">Unified Multi-Account Supabase Gateway</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-4">
+          <button 
+            onclick="triggerKeepAlive()" 
+            title="Instant Keep-Alive Ping" 
+            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 rounded-lg flex items-center gap-1.5 transition"
+          >
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-slow"></span>
+            <span class="hidden sm:inline">Keep-Alive Ping</span>
+            <span class="sm:hidden">Ping</span>
+          </button>
+
+          <button 
+            onclick="copyProxyUrl()" 
+            class="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-xs font-medium text-indigo-300 rounded-lg flex items-center gap-1.5 transition"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <span class="hidden sm:inline">Copy Proxy Endpoint</span>
+            <span class="sm:hidden">Proxy URL</span>
+          </button>
+
+          <button 
+            onclick="lockDashboard()" 
+            class="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 rounded-lg transition" 
+            title="Lock Dashboard"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4 overflow-x-auto py-1 scrollbar-none border-t border-slate-800/60 text-xs font-medium">
+        <button onclick="switchTab('accounts')" id="tab-accounts" class="tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <span>⚡ Connected Accounts</span>
+          <span id="accountCountBadge" class="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 text-[10px] rounded-full">0</span>
+        </button>
+        <button onclick="switchTab('add')" id="tab-add" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>➕ Add & Smart Paste</span>
+        </button>
+        <button onclick="switchTab('tester')" id="tab-tester" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🧪 Live API Test Suite</span>
+        </button>
+        <button onclick="switchTab('keys')" id="tab-keys" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🔑 Master API Keys</span>
+        </button>
+        <button onclick="switchTab('query')" id="tab-query" class="tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🚀 Milliseconds Query Test</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+
+      <!-- Metrics Row -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Connected Accounts</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricAccounts" class="text-2xl font-bold text-white tracking-tight">0</span>
+            <span class="text-[10px] text-emerald-400 font-semibold">Active</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Keep-Alive Sentinel</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricSentinel" class="text-sm font-semibold text-emerald-400">Online</span>
+            <span class="text-[10px] text-slate-400">Anti-Pause</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Proxy Mode</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span class="text-sm font-semibold text-indigo-400">Aggregated</span>
+            <span class="text-[10px] text-slate-400">Parallel</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-slate-400 font-medium">Avg Latency</p>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="metricLatency" class="text-2xl font-bold text-white tracking-tight mono">--</span>
+            <span class="text-[10px] text-slate-400">ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB 1: CONNECTED ACCOUNTS ==================== -->
+      <section id="section-accounts" class="space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Active Supabase Backends</h2>
+            <p class="text-sm text-slate-400">All registered projects stored in Master Supabase that this router orchestrates.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="fetchAccounts()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl border border-slate-700 flex items-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Refresh
+            </button>
+            <button onclick="switchTab('add')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Connect New Account
+            </button>
+          </div>
+        </div>
+
+        <!-- Search and Filter Bar for Connected Accounts -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center gap-3">
+            <div class="relative flex-1">
+              <input 
+                type="text" 
+                id="accountSearchInput" 
+                oninput="handleAccountSearch(this.value)" 
+                placeholder="🔍 Search accounts by name, #tag, or URL..." 
+                class="w-full px-4 py-2.5 pl-10 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+              <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </div>
+            <button 
+              id="clearSearchBtn" 
+              onclick="clearAccountSearch()" 
+              class="hidden px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-xl border border-slate-700 transition"
+            >
+              Clear
+            </button>
+          </div>
+          
+          <div class="flex items-center gap-2 flex-wrap text-xs">
+            <span class="text-slate-400 font-medium">Filter:</span>
+            <button onclick="setAccountFilter('ALL')" id="filter-ALL" class="px-3 py-1 bg-indigo-600 text-white rounded-lg font-semibold transition">All (<span id="filterCountAll">0</span>)</button>
+            <button onclick="setAccountFilter('ACTIVE')" id="filter-ACTIVE" class="px-3 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-lg font-semibold transition">Active (<span id="filterCountActive">0</span>)</button>
+            <button onclick="setAccountFilter('DEACTIVATED')" id="filter-DEACTIVATED" class="px-3 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-lg font-semibold transition">Deactivated (<span id="filterCountDeactivated">0</span>)</button>
+          </div>
+        </div>
+
+        <div id="accountsLoading" class="text-center py-12">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-700 border-t-indigo-500"></div>
+          <p class="text-sm text-slate-400 mt-3">Connecting to Master Database...</p>
+        </div>
+
+        <div id="accountsList" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden"></div>
+
+        <div id="noAccountsNotice" class="hidden text-center py-16 bg-slate-900 border border-dashed border-slate-800 rounded-3xl p-8">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white">No Supabase Accounts Connected Yet</h3>
+          <p class="text-sm text-slate-400 max-w-md mx-auto mt-1 mb-6">Connect your Supabase accounts or paste raw keys to let this router automatically balance and merge reads and writes across them.</p>
+          <button onclick="switchTab('add')" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition">
+            Add Your First Account
+          </button>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: ADD & SMART PASTE ==================== -->
+      <section id="section-add" class="hidden space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Connect Supabase Account</h2>
+          <p class="text-sm text-slate-400">Use our Smart Auto-Parser to paste raw project text, or fill in fields manually. Test keys before saving.</p>
+        </div>
+
+        <!-- Real-time Status / Error Alert Banner -->
+        <div id="formAlertBanner" class="hidden p-4 rounded-2xl text-xs flex items-start gap-3 transition-all">
+          <span id="formAlertIcon" class="text-base">⚠️</span>
+          <div class="flex-1">
+            <h4 id="formAlertTitle" class="font-bold text-sm">Alert</h4>
+            <p id="formAlertMsg" class="mt-0.5 leading-relaxed"></p>
+            <div id="formAlertAction" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- Smart Raw Paste Box -->
+        <div class="bg-gradient-to-br from-slate-900 via-indigo-950/20 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🪄</span>
+              <h3 class="text-sm font-bold text-indigo-300 uppercase tracking-wider">Smart Auto-Paste Detector</h3>
+            </div>
+            <span class="text-xs text-slate-400">Auto-detects URL, API keys, Project name</span>
+          </div>
+
+          <textarea 
+            id="rawPasteInput" 
+            rows="4" 
+            placeholder="Paste your raw text from Supabase CLI or project dashboard here (e.g. project url, publishable key, database password, etc.)..." 
+            class="w-full px-4 py-3 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+          ></textarea>
+
+          <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
+            <p class="text-xs text-slate-400">Clicking below extracts all details into the form instantly.</p>
+            <button 
+              type="button" 
+              onclick="smartAutoFill()" 
+              class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>⚡ Extract & Auto-Fill Form</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Manual / Verified Form -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+          <div id="addAccountForm" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Project Name / Alias <span class="text-rose-400">*</span></label>
+                <input 
+                  type="text" 
+                  id="formName" 
+                  placeholder="e.g. OTT Platform 1" 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Project URL <span class="text-rose-400">*</span> (http:// or https://)</label>
+                <input 
+                  type="text" 
+                  id="formUrl" 
+                  placeholder="https://xyz.supabase.co" 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
+                >
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Publishable Key (New Format / Anon) <span class="text-rose-400">*</span></label>
+                <input 
+                  type="text" 
+                  id="formPublishableKey" 
+                  placeholder="sb_publishable_... or eyJhbGciOi..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Secret Key / Service Role Key (Admin / SQL)</label>
+                <input 
+                  type="text" 
+                  id="formSecretKey" 
+                  placeholder="sb_secret_... or service_role key..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 mono text-xs" 
+                >
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Database Password (Optional)</label>
+                <input 
+                  type="text" 
+                  id="formPass" 
+                  placeholder="Database connection password..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs" 
+                >
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Direct Routing Tag (Optional)</label>
+                <input 
+                  type="text" 
+                  id="formTag" 
+                  placeholder="e.g. ott-main, users-db..." 
+                  class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono text-xs" 
+                >
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Database Connection String (URI - Optional)</label>
+              <input 
+                type="text" 
+                id="formConnString" 
+                placeholder="postgresql://postgres:[password]@db.xyz.supabase.co:5432/postgres" 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 mono" 
+              >
+            </div>
+
+            <!-- Inline Test Result Box -->
+            <div id="inlineTestResult" class="hidden p-4 rounded-xl text-xs space-y-1.5 transition-all"></div>
+
+            <div class="pt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80">
+              <button 
+                type="button" 
+                onclick="testFormAccountNow()" 
+                id="testFormBtn"
+                class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-xs font-semibold text-indigo-300 rounded-xl transition flex items-center gap-2 cursor-pointer active:scale-95"
+              >
+                <span id="testBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin"></span>
+                <span>🧪 Test API Key Now (Read/Write Handshake)</span>
+              </button>
+
+              <div class="flex gap-2">
+                <button 
+                  type="button" 
+                  onclick="switchTab('accounts')" 
+                  class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  onclick="submitNewAccount()" 
+                  id="saveAccountBtn"
+                  class="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <span id="saveBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  <span id="saveBtnText">Test & Save to Database</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: LIVE API TEST SUITE ==================== -->
+      <section id="section-tester" class="hidden space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">API Diagnostics & Live Test Suite</h2>
+            <p class="text-sm text-slate-400">Perform deep real-time tests on any Supabase endpoint. Check read, write, latency, and protocol compatibility.</p>
+          </div>
+          <button 
+            onclick="batchTestAllAccounts()" 
+            id="batchTestBtn"
+            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span>Batch Test All Accounts</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Diagnostics Configuration -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <span>🔬</span>
+              <span>Test Target Setup</span>
+            </h3>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Select from Connected Accounts</label>
+              <select 
+                id="testerAccountSelect" 
+                onchange="loadSelectedAccountIntoTester()"
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">-- Custom Manual Input --</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Target Supabase URL (HTTP or HTTPS)</label>
+              <input 
+                type="text" 
+                id="testerUrl" 
+                placeholder="https://xyz.supabase.co" 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">API Key (Anon Public / Service Role)</label>
+              <input 
+                type="text" 
+                id="testerKey" 
+                placeholder="sb_publishable_... or eyJhbGciOi..." 
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Test Scope</label>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" onclick="setTesterScope('ping')" id="scope-ping" class="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold text-center">Ping & Latency</button>
+                <button type="button" onclick="setTesterScope('read')" id="scope-read" class="px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center">Read Test</button>
+                <button type="button" onclick="setTesterScope('full')" id="scope-full" class="px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center">Full Handshake</button>
+              </div>
+            </div>
+
+            <button 
+              type="button" 
+              onclick="executeTesterDiagnostic()" 
+              id="runDiagnosticBtn"
+              class="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <span id="diagnosticSpinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              <span id="diagnosticBtnText">Run Deep Diagnostic Test</span>
+            </button>
+          </div>
+
+          <!-- Live Output & Diagnostics Results -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span>📋</span>
+                <span>Diagnostic Report</span>
+              </h3>
+              <span id="testerStatusChip" class="px-2.5 py-0.5 text-[10px] font-semibold bg-slate-800 text-slate-400 rounded-full border border-slate-700">STANDBY</span>
+            </div>
+
+            <!-- Scorecard Grid -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">Latency</p>
+                <p id="testerLatencyMetric" class="text-base font-bold text-white mono mt-0.5">-- ms</p>
+              </div>
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">Protocol</p>
+                <p id="testerProtocolMetric" class="text-base font-bold text-indigo-400 mono mt-0.5">--</p>
+              </div>
+              <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-center">
+                <p class="text-[10px] text-slate-400 uppercase font-semibold">HTTP Status</p>
+                <p id="testerHttpMetric" class="text-base font-bold text-emerald-400 mono mt-0.5">--</p>
+              </div>
+            </div>
+
+            <!-- Detailed Terminal Console Log -->
+            <div class="flex-1 flex flex-col">
+              <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5 mono">
+                <span>Diagnostics Console Log</span>
+                <button onclick="clearTesterConsole()" class="text-slate-500 hover:text-white">Clear</button>
+              </div>
+              <pre id="testerConsoleOutput" class="flex-1 min-h-[160px] max-h-[300px] overflow-auto bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs mono text-emerald-400 whitespace-pre-wrap leading-relaxed">// Ready. Select or enter target Supabase endpoint and click "Run Deep Diagnostic Test"...</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch Test Results Matrix (Appears when batch test runs) -->
+        <div id="batchResultsCard" class="hidden bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Batch Health Matrix</h3>
+            <span id="batchSummaryText" class="text-xs text-slate-400"></span>
+          </div>
+          <div id="batchMatrixContainer" class="space-y-2"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: MASTER API KEYS ==================== -->
+      <section id="section-keys" class="hidden space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Master API Keys</h2>
+            <p class="text-sm text-slate-400">OpenRouter-style master bearer keys. Use this one key to route requests across all your accounts automatically.</p>
+          </div>
+          <button 
+            onclick="generateNewMasterKey()" 
+            class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center gap-2 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Generate New Master Key
+          </button>
+        </div>
+
+        <div id="keysContainer" class="space-y-3"></div>
+
+        <!-- Code integration helper -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <h3 class="text-sm font-bold text-white uppercase tracking-wider">How to use your Master Key</h3>
+          <p class="text-xs text-slate-400">Send requests directly to your Vercel Proxy endpoint. You can either specify <code class="text-indigo-400">x-project-name</code> for a specific account, or omit it to query ALL accounts in parallel!</p>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 overflow-x-auto">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] text-slate-400 font-semibold mono">cURL Request Example</span>
+              <button onclick="copySnippet('curlSnippet')" class="text-xs text-indigo-400 hover:text-indigo-300">Copy</button>
+            </div>
+            <pre id="curlSnippet" class="text-xs text-emerald-400 mono leading-relaxed">curl -X POST https://proxproject.vercel.app/api/proxy \
+  -H "Authorization: Bearer omni_live_master_default_2026" \
+  -H "x-project-name: all" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "query", "path": "users"}'</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 5: MASTER SQL ENGINE & ACTION PLAYGROUND ==================== -->
+      <section id="section-query" class="hidden space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Master SQL Engine & Action Playground</h2>
+            <p class="text-sm text-slate-400">Run SQL queries, auto-create tables, upgrade schemas, insert, update, or delete across connected accounts using Master API Key.</p>
+          </div>
+          <div class="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
+            <button onclick="loadSqlPreset('create_table')" class="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg transition">🔨 Create Table</button>
+            <button onclick="loadSqlPreset('alter_table')" class="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg transition">⚡ Upgrade Table</button>
+            <button onclick="loadSqlPreset('insert')" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg transition">📥 Insert Record</button>
+            <button onclick="loadSqlPreset('update')" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg transition">✏️ Update</button>
+            <button onclick="loadSqlPreset('delete')" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg transition">❌ Delete Record</button>
+            <button onclick="loadSqlPreset('drop_table')" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg transition">🗑️ Drop Table</button>
+            <button onclick="loadSqlPreset('sql')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition">🔍 Custom SQL</button>
+            <button onclick="loadSqlPreset('control_list')" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg transition">🛡️ Control: List</button>
+            <button onclick="loadSqlPreset('control_toggle')" class="px-2.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg transition">🛡️ Control: Toggle</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Target Account Routing</label>
+              <select id="queryTargetSelect" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="all">⚡ ALL Connected Accounts (Parallel Execution)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">JSON Action Payload or Path</label>
+              <textarea 
+                id="queryPayloadJson" 
+                rows="8" 
+                placeholder='{ "action": "create_table", "table": "users", "columns": [{ "name": "email", "type": "text" }] }'
+                class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+              >{
+  "action": "sql",
+  "query": "CREATE TABLE IF NOT EXISTS public.user_notes (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), note text, created_at timestamptz DEFAULT now()); ALTER TABLE public.user_notes DISABLE ROW LEVEL SECURITY; GRANT ALL ON TABLE public.user_notes TO anon, authenticated, service_role;"
+}</textarea>
+            </div>
+
+            <button 
+              onclick="runPlaygroundQuery()" 
+              id="runQueryBtn"
+              class="w-full py-3 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span>Execute Master Action / SQL</span>
+            </button>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-300">Live Result Output</span>
+              <span id="queryLatencyBadge" class="text-[11px] mono text-emerald-400">0 ms</span>
+            </div>
+            <pre id="queryResultOutput" class="flex-1 min-h-[300px] max-h-[460px] overflow-auto bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs mono text-slate-300 whitespace-pre-wrap leading-relaxed">// Click "Execute Master Action / SQL" to view execution results...</pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ================= DIRECT READ MODAL ================= -->
+    <div id="directReadModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 id="directReadModalTitle" class="text-base font-bold text-white">Direct Read</h3>
+            <p class="text-xs text-slate-400">Reads directly from this account without multi-scanning.</p>
+          </div>
+          <span id="directReadTagBadge" class="px-2.5 py-1 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs mono font-semibold"></span>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">REST Endpoint / Table Subpath</label>
+          <input type="text" id="directReadSubpath" value="rest/v1/users?select=*" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>Latency: <strong id="directReadLatency" class="text-emerald-400 mono">-- ms</strong></span>
+          <button onclick="closeDirectReadModal()" class="text-slate-400 hover:text-white">Close</button>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 max-h-[260px] overflow-auto">
+          <pre id="directReadOutput" class="text-xs mono text-emerald-400 whitespace-pre-wrap">// Ready for direct read...</pre>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeDirectReadModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+          <button type="button" onclick="executeDirectRead()" id="directReadBtn" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25">Execute Direct Read</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= DIRECT WRITE MODAL ================= -->
+    <div id="directWriteModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 id="directWriteModalTitle" class="text-base font-bold text-white">Direct Write</h3>
+            <p class="text-xs text-slate-400">Inserts record directly into this account.</p>
+          </div>
+          <span id="directWriteTagBadge" class="px-2.5 py-1 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs mono font-semibold"></span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Target Table</label>
+            <input type="text" id="directWriteTable" value="users" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white mono focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Response Latency</label>
+            <div class="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-emerald-400 mono font-bold flex items-center" id="directWriteLatency">-- ms</div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">JSON Record Payload</label>
+          <textarea id="directWriteJson" rows="4" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white mono focus:outline-none focus:ring-2 focus:ring-emerald-500">{
+  "name": "Test User",
+  "email": "test@example.com"
+}</textarea>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 max-h-[200px] overflow-auto">
+          <pre id="directWriteOutput" class="text-xs mono text-slate-300 whitespace-pre-wrap">// Ready for direct write...</pre>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeDirectWriteModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+          <button type="button" onclick="executeDirectWrite()" id="directWriteBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-emerald-500/25">Execute Direct Write</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CREATE MASTER KEY MODAL ================= -->
+    <div id="masterKeyModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white">Generate New Master Key</h3>
+            <p class="text-xs text-slate-400">Configure routing destination and run live pre-test handshake.</p>
+          </div>
+          <button onclick="closeMasterKeyModal()" class="text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Key Label / Name</label>
+          <input type="text" id="newKeyNameInput" placeholder="e.g. Mobile App Client Key" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Connected Routing Destination</label>
+          <div id="newKeyAccountsCheckboxes" class="space-y-2 max-h-40 overflow-auto bg-slate-950 border border-slate-800 rounded-xl p-3">
+            <!-- Dynamically populated checkboxes -->
+          </div>
+        </div>
+
+        <div id="keyTestStatusBox" class="hidden p-3 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300">
+          <div class="flex items-center gap-2">
+            <span class="animate-spin inline-block w-3 h-3 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full"></span>
+            <span id="keyTestStatusText">Smart testing read/write connection on target accounts...</span>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeMasterKeyModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+          <button type="button" onclick="preTestAndGenerateMasterKey()" id="generateKeySubmitBtn" class="px-5 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25">Pre-Test & Generate Key</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= MANAGE KEY ACCOUNTS MODAL ================= -->
+    <div id="manageKeyAccountsModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <span class="text-indigo-400">⚡</span>
+              <span id="manageKeyModalTitle">Manage Connected Accounts</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Attach or detach target Supabase accounts for this Master API Key.</p>
+          </div>
+          <button onclick="closeManageKeyAccountsModal()" class="text-slate-400 hover:text-white p-1">✕</button>
+        </div>
+
+        <!-- Master Key Info Badge -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400">Target Key:</span>
+            <span id="manageKeyNameBadge" class="text-white font-semibold"></span>
+          </div>
+          <div class="flex items-center justify-between mono">
+            <span class="text-slate-500 text-[10px]">Token:</span>
+            <span id="manageKeyTokenBadge" class="text-indigo-400 text-[11px] truncate max-w-[240px]"></span>
+          </div>
+        </div>
+
+        <!-- Account Selection Area -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-semibold text-slate-300">Select Accounts for this Key</label>
+            <div class="flex items-center gap-2 text-[11px]">
+              <button type="button" onclick="toggleAllManageAccounts(true)" class="text-indigo-400 hover:underline cursor-pointer">Select All</button>
+              <span class="text-slate-600">&bull;</span>
+              <button type="button" onclick="toggleAllManageAccounts(false)" class="text-slate-400 hover:underline cursor-pointer">Clear</button>
+            </div>
+          </div>
+          <div id="manageKeyAccountsCheckboxes" class="space-y-2 max-h-56 overflow-auto bg-slate-950 border border-slate-800 rounded-xl p-3">
+            <!-- Dynamically populated checkboxes -->
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-800/80">
+          <button type="button" onclick="closeManageKeyAccountsModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl cursor-pointer">Cancel</button>
+          <button type="button" onclick="saveKeyAccountsModal()" id="saveKeyAccountsBtn" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 flex items-center gap-1.5 cursor-pointer">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span>Save Accounts to Key</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950 py-6 text-center text-xs text-slate-500">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p>OTT Router Gateway &bull; Multi-Supabase Proxy System</p>
+        <p class="mono text-[11px] text-slate-600">Vercel Serverless Ready &bull; Keep-Alive Active</p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // ==================== CONFIGURATION & STATE ====================
+    const ACCESS_CODE = "Adnan@24??";
+    const MASTER_SUPABASE_URL = "https://sjdlejiwqmkyfkvmodgd.supabase.co";
+    const MASTER_SUPABASE_KEY = "sb_publishable_YAv53hX7HhPdxBcsiZpKEA_JHKMmGAt";
+
+    let state = {
+      accounts: [],
+      masterKeys: [],
+      selectedMethod: 'GET',
+      testerScope: 'ping'
+    };
+
+    // ==================== SECURITY & ACCESS ====================
+    function checkAuth() {
+      const isAuthed = sessionStorage.getItem('ott_router_authed');
+      if (isAuthed === 'true') {
+        document.getElementById('lockScreen').classList.add('hidden');
+        document.getElementById('mainDashboard').classList.remove('hidden');
+        initDashboard();
+      }
+    }
+
+    function handleUnlock(e) {
+      if (e) e.preventDefault();
+      const code = document.getElementById('accessCodeInput').value.trim();
+      const lockError = document.getElementById('lockError');
+      const lockCard = document.getElementById('lockCard');
+
+      if (code === ACCESS_CODE) {
+        sessionStorage.setItem('ott_router_authed', 'true');
+        lockError.classList.add('hidden');
+        document.getElementById('lockScreen').classList.add('opacity-0');
+        setTimeout(() => {
+          document.getElementById('lockScreen').classList.add('hidden');
+          document.getElementById('mainDashboard').classList.remove('hidden');
+          initDashboard();
+        }, 200);
+      } else {
+        lockError.classList.remove('hidden');
+        lockCard.classList.remove('shake-anim');
+        void lockCard.offsetWidth; // Trigger reflow
+        lockCard.classList.add('shake-anim');
+      }
+    }
+
+    function toggleCodeVisibility() {
+      const input = document.getElementById('accessCodeInput');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function lockDashboard() {
+      sessionStorage.removeItem('ott_router_authed');
+      document.getElementById('mainDashboard').classList.add('hidden');
+      document.getElementById('lockScreen').classList.remove('hidden', 'opacity-0');
+      document.getElementById('accessCodeInput').value = '';
+    }
+
+    // ==================== NAVIGATION TABS ====================
+    function switchTab(tabId) {
+      const tabs = ['accounts', 'add', 'tester', 'keys', 'query'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        const sec = document.getElementById(`section-${t}`);
+        if (t === tabId) {
+          if (btn) btn.className = "tab-btn px-3 py-2 rounded-md text-white bg-slate-800 flex items-center gap-1.5 whitespace-nowrap";
+          if (sec) sec.classList.remove('hidden');
+        } else {
+          if (btn) btn.className = "tab-btn px-3 py-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/50 flex items-center gap-1.5 whitespace-nowrap";
+          if (sec) sec.classList.add('hidden');
+        }
+      });
+      clearFormAlert();
+    }
+
+    // ==================== DASHBOARD INIT & DATA FETCH ====================
+    async function initDashboard() {
+      loadCachedAccounts();
+      loadCachedMasterKeys();
+      await fetchAccounts();
+      await fetchMasterKeys();
+    }
+
+    function loadCachedAccounts() {
+      try {
+        const cached = localStorage.getItem('ott_cached_accounts');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            state.accounts = parsed;
+            renderAccountsList();
+            document.getElementById('metricAccounts').innerText = state.accounts.length;
+            document.getElementById('accountCountBadge').innerText = state.accounts.length;
+            updateQueryDropdown();
+            updateTesterDropdown();
+            document.getElementById('accountsList').classList.remove('hidden');
+            document.getElementById('accountsLoading').classList.add('hidden');
+          }
+        }
+      } catch(e) {}
+    }
+
+    async function fetchAccounts() {
+      const loading = document.getElementById('accountsLoading');
+      const list = document.getElementById('accountsList');
+      const emptyNotice = document.getElementById('noAccountsNotice');
+
+      if (state.accounts.length === 0) {
+        loading.classList.remove('hidden');
+        list.classList.add('hidden');
+      }
+      emptyNotice.classList.add('hidden');
+
+      let accounts = null;
+
+      // 1. Try internal backend API
+      try {
+        const res = await fetch('/api/accounts');
+        if (res.ok) {
+          accounts = await res.json();
+        }
+      } catch (err) {
+        console.warn('Backend API unavailable, trying direct Supabase REST:', err);
+      }
+
+      // 2. Direct Supabase REST Fallback if /api/accounts failed
+      if (!accounts || !Array.isArray(accounts)) {
+        try {
+          const directRes = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?select=*`, {
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+          if (directRes.ok) {
+            accounts = await directRes.json();
+          }
+        } catch (fbErr) {
+          console.error('Direct fallback error:', fbErr);
+        }
+      }
+
+      loading.classList.add('hidden');
+
+      if (Array.isArray(accounts)) {
+        state.accounts = accounts;
+        try { localStorage.setItem('ott_cached_accounts', JSON.stringify(accounts)); } catch(e) {}
+      }
+
+      document.getElementById('metricAccounts').innerText = state.accounts.length;
+      document.getElementById('accountCountBadge').innerText = state.accounts.length;
+      updateQueryDropdown();
+      updateTesterDropdown();
+
+      if (state.accounts.length === 0) {
+        list.classList.add('hidden');
+        emptyNotice.classList.remove('hidden');
+      } else {
+        emptyNotice.classList.add('hidden');
+        renderAccountsList();
+        list.classList.remove('hidden');
+      }
+    }
+
+    function handleAccountSearch(val) {
+      state.accountSearch = val;
+      const clearBtn = document.getElementById('clearSearchBtn');
+      if (val && val.trim().length > 0) {
+        clearBtn.classList.remove('hidden');
+      } else {
+        clearBtn.classList.add('hidden');
+      }
+      renderAccountsList();
+    }
+
+    function clearAccountSearch() {
+      const input = document.getElementById('accountSearchInput');
+      if (input) input.value = '';
+      state.accountSearch = '';
+      document.getElementById('clearSearchBtn').classList.add('hidden');
+      renderAccountsList();
+    }
+
+    function setAccountFilter(filter) {
+      state.accountFilter = filter;
+      ['ALL', 'ACTIVE', 'DEACTIVATED'].forEach(f => {
+        const btn = document.getElementById(`filter-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+          btn.className = "px-3 py-1 bg-indigo-600 text-white rounded-lg font-semibold transition";
+        } else {
+          btn.className = "px-3 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-lg font-semibold transition";
+        }
+      });
+      renderAccountsList();
+    }
+
+    function renderAccountsList() {
+      const container = document.getElementById('accountsList');
+      if (!container) return;
+
+      // Update badge counts
+      const countAll = state.accounts.length;
+      const countActive = state.accounts.filter(a => a.is_active !== false).length;
+      const countDeact = state.accounts.filter(a => a.is_active === false).length;
+      const elAll = document.getElementById('filterCountAll');
+      const elAct = document.getElementById('filterCountActive');
+      const elDeact = document.getElementById('filterCountDeactivated');
+      if (elAll) elAll.innerText = countAll;
+      if (elAct) elAct.innerText = countActive;
+      if (elDeact) elDeact.innerText = countDeact;
+
+      const q = (state.accountSearch || '').trim().toLowerCase();
+      const filter = state.accountFilter || 'ALL';
+
+      const filtered = state.accounts.filter(acc => {
+        const isActive = acc.is_active !== false;
+        if (filter === 'ACTIVE' && !isActive) return false;
+        if (filter === 'DEACTIVATED' && isActive) return false;
+        if (!q) return true;
+        const name = (acc.name || '').toLowerCase();
+        const url = (acc.project_url || '').toLowerCase();
+        const tag = (acc.routing_tag || acc.name || '').toLowerCase();
+        return name.includes(q) || url.includes(q) || tag.includes(q);
+      });
+
+      if (filtered.length === 0) {
+        if (state.accounts.length === 0) {
+          container.innerHTML = ``;
+          document.getElementById('noAccountsNotice').classList.remove('hidden');
+        } else {
+          document.getElementById('noAccountsNotice').classList.add('hidden');
+          container.innerHTML = `
+            <div class="col-span-full py-12 text-center bg-slate-900 border border-slate-800 rounded-3xl p-6">
+              <p class="text-sm text-slate-300 font-semibold">🔍 No accounts match "${escapeHtml(state.accountSearch)}"</p>
+              <p class="text-xs text-slate-500 mt-1">Try clearing the search filter or switching to "All".</p>
+              <button onclick="clearAccountSearch(); setAccountFilter('ALL');" class="mt-4 px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-indigo-400 font-medium rounded-xl border border-slate-700 transition">
+                Reset Filter
+              </button>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      document.getElementById('noAccountsNotice').classList.add('hidden');
+
+      container.innerHTML = filtered.map(acc => {
+        const isActive = acc.is_active !== false;
+        const tag = acc.routing_tag || (acc.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
+        const encId = encodeURIComponent(acc.id || '');
+        const encName = encodeURIComponent(acc.name || '');
+        const encUrl = encodeURIComponent(acc.project_url || '');
+
+        return `
+        <div class="bg-slate-900 border ${isActive ? 'border-slate-800 hover:border-slate-700/80' : 'border-amber-900/40 opacity-80'} rounded-2xl p-5 shadow-sm transition space-y-3">
+          <!-- Top Row: Icon, Name & URL, Status Badge -->
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl ${isActive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'} flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7z"/>
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-bold text-white text-base">${escapeHtml(acc.name || 'Unnamed')}</h3>
+                  <span class="px-2 py-0.5 text-[10px] rounded-full font-bold flex items-center gap-1 ${isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}">
+                    <span class="w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+                    ${isActive ? 'ACTIVE' : 'DEACTIVATED'}
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 mono mt-0.5 truncate max-w-[220px] sm:max-w-[300px]">${escapeHtml(acc.project_url || '')}</p>
+              </div>
+            </div>
+
+            <!-- Direct String Tag Chip -->
+            <button 
+              onclick="copyText('#${tag}', 'String tag #${tag} copied!')" 
+              class="px-2 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg text-[11px] mono font-semibold flex items-center gap-1 transition cursor-pointer"
+              title="Click to copy routing string tag"
+            >
+              <span>#${escapeHtml(tag)}</span>
+              <svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Credentials Preview Bar -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-1.5 text-xs">
+            <div class="flex justify-between items-center text-slate-400">
+              <span>API Key:</span>
+              <span class="mono text-slate-300 truncate max-w-[180px]">${maskKey(acc.api_key)}</span>
+            </div>
+            ${acc.db_password ? `
+              <div class="flex justify-between items-center text-slate-400">
+                <span>DB Password:</span>
+                <span class="mono text-slate-300">••••••••••</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- ================= DEDICATED ACTION BUTTONS ================= -->
+          <div class="grid grid-cols-3 gap-2 pt-1 text-xs font-semibold">
+            <!-- Action 1: Direct Read -->
+            <button 
+              onclick="openDirectReadModal('${acc.id}')"
+              class="px-2.5 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+              title="Direct table read on this account"
+            >
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              <span>Read</span>
+            </button>
+
+            <!-- Action 2: Direct Write -->
+            <button 
+              onclick="openDirectWriteModal('${acc.id}')"
+              class="px-2.5 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+              title="Direct insert/write on this account"
+            >
+              <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+              <span>Write</span>
+            </button>
+
+            <!-- Action 3: Copy Account Master Key -->
+            <button 
+              onclick="copyAccountMasterKeyConfig('${acc.id}')"
+              class="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+              title="Copy customized Master Key cURL and endpoints"
+            >
+              <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+              </svg>
+              <span>Master Key</span>
+            </button>
+          </div>
+
+          <!-- Bottom Row: Toggle Status & Delete -->
+          <div class="flex items-center justify-between pt-1 text-xs">
+            <!-- Action 4: Toggle Status (Active / Deactivate) -->
+            <button 
+              onclick="toggleAccountStatus('${acc.id}')"
+              class="px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${isActive ? 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-amber-400' : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300'}"
+            >
+              <span>${isActive ? '⏸️ Deactivate' : '▶️ Activate'}</span>
+            </button>
+
+            <!-- Action 5: Delete Permanently -->
+            <button 
+              onclick="deleteAccount('${acc.id}', '${encName}', '${encUrl}')"
+              class="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              title="Delete account from app and database"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              <span>Delete</span>
+            </button>
+          </div>
+        </div>
+        `;
+      }).join('');
+    }
+
+    // ==================== SMART AUTO-PASTE PARSER ====================
+    function smartAutoFill() {
+      const raw = document.getElementById('rawPasteInput').value;
+      if (!raw.trim()) {
+        showToast('⚠️ Paste some raw Supabase text in the box first!', 'warn');
+        return;
+      }
+
+      // Regex patterns to capture project name, project url, keys, and DB URI
+      const dashMatch = raw.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
+      const urlMatch = raw.match(/https?:\/\/[a-zA-Z0-9.-]+\.supabase\.co/i);
+      const pubMatch = raw.match(/sb_publishable_[a-zA-Z0-9_-]+/i);
+      const secMatch = raw.match(/sb_secret_[a-zA-Z0-9_-]+/i);
+      const jwtMatches = raw.match(/eyJhbGciOi[a-zA-Z0-9._-]+/g);
+      const nameMatch = raw.match(/(?:project\s*name|alias)[\s:=]+([^\n\r"']+)/i);
+      const passMatch = raw.match(/(?:Database\s*password|db_password|db\s*pass)(?!\s*string|\s*uri|\s*url)[\s:=]+([^\n\r"']+)/i);
+      const uriMatch = raw.match(/(?:postgresql|postgres):\/\/[^\s"']+/i);
+
+      if (dashMatch) {
+        document.getElementById('formUrl').value = `https://${dashMatch[1]}.supabase.co`;
+      } else if (urlMatch) {
+        document.getElementById('formUrl').value = urlMatch[0].trim();
+      }
+
+      const pubEl = document.getElementById('formPublishableKey');
+      const secEl = document.getElementById('formSecretKey');
+
+      if (pubMatch) {
+        if (pubEl) pubEl.value = pubMatch[0].trim();
+      }
+      if (secMatch) {
+        if (secEl) secEl.value = secMatch[0].trim();
+      }
+      if (jwtMatches && jwtMatches.length > 0) {
+        if (!pubMatch && pubEl) pubEl.value = jwtMatches[0].trim();
+        if (jwtMatches.length > 1 && secEl && !secMatch) secEl.value = jwtMatches[1].trim();
+      }
+
+      let db_password = '';
+      if (passMatch && passMatch[1]) {
+        const candidate = passMatch[1].trim().replace(/^['"]|['"]$/g, '');
+        if (!candidate.toLowerCase().startsWith('postgres') && !candidate.toLowerCase().startsWith('note:') && !candidate.toLowerCase().startsWith('this password')) {
+          db_password = candidate;
+        }
+      }
+
+      if (!db_password && uriMatch) {
+        const uri = uriMatch[0].trim();
+        const lastAt = uri.lastIndexOf('@');
+        const schemeEnd = uri.indexOf('://');
+        if (lastAt !== -1 && schemeEnd !== -1) {
+          const userPass = uri.slice(schemeEnd + 3, lastAt);
+          const colonIdx = userPass.indexOf(':');
+          if (colonIdx !== -1) {
+            const p = userPass.slice(colonIdx + 1);
+            if (p && !p.includes('[YOUR-PASSWORD]') && !p.includes('[PASSWORD]')) {
+              try {
+                db_password = decodeURIComponent(p);
+              } catch (e) {
+                db_password = p;
+              }
+            }
+          }
+        }
+      }
+
+      if (!db_password) {
+        const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        for (let i = 0; i < Math.min(lines.length - 1, 5); i++) {
+          if (lines[i].includes('@') && lines[i].includes('.') && !lines[i].startsWith('postgres')) {
+            const nextLine = lines[i + 1];
+            if (nextLine && nextLine.length >= 6 && !nextLine.includes(' ') && !nextLine.toLowerCase().includes('project') && !nextLine.toLowerCase().includes('url')) {
+              db_password = nextLine;
+              break;
+            }
+          }
+        }
+      }
+
+      if (db_password) {
+        const passEl = document.getElementById('formPass');
+        if (passEl) passEl.value = db_password;
+      }
+
+      let db_connection_string = '';
+      if (uriMatch) {
+        db_connection_string = uriMatch[0].trim();
+        if (db_password && (db_connection_string.includes('[YOUR-PASSWORD]') || db_connection_string.includes('[PASSWORD]'))) {
+          const encPass = encodeURIComponent(db_password);
+          db_connection_string = db_connection_string.replace(/\[YOUR[-_]PASSWORD\]/gi, encPass)
+                                                     .replace(/\[PASSWORD\]/gi, encPass);
+        }
+        const connEl = document.getElementById('formConnString');
+        if (connEl) connEl.value = db_connection_string;
+      } else if (db_password) {
+        const projectUrl = document.getElementById('formUrl').value;
+        if (projectUrl) {
+          const ref = projectUrl.replace(/https?:\/\//, '').split('.')[0];
+          const encPass = encodeURIComponent(db_password);
+          db_connection_string = `postgresql://postgres:${encPass}@db.${ref}.supabase.co:5432/postgres`;
+          const connEl = document.getElementById('formConnString');
+          if (connEl) connEl.value = db_connection_string;
+        }
+      }
+
+      if (nameMatch && nameMatch[1]) {
+        document.getElementById('formName').value = nameMatch[1].trim().replace(/^['"]|['"]$/g, '');
+      } else if (dashMatch || urlMatch) {
+        const fullUrl = document.getElementById('formUrl').value;
+        const sub = fullUrl.replace(/https?:\/\//, '').split('.')[0];
+        document.getElementById('formName').value = 'Project ' + sub;
+      }
+
+      showToast('✨ Auto-detected and filled form fields!', 'success');
+      clearFormAlert();
+    }
+
+    // ==================== INLINE TEST FORM ACCOUNT ====================
+    async function testFormAccountNow() {
+      const urlInput = document.getElementById('formUrl');
+      const pubKeyInput = document.getElementById('formPublishableKey');
+      const secKeyInput = document.getElementById('formSecretKey');
+      const box = document.getElementById('inlineTestResult');
+      const btn = document.getElementById('testFormBtn');
+      const spinner = document.getElementById('testBtnSpinner');
+
+      let url = urlInput.value.trim().replace(/^['"]|['"]$/g, '');
+      let pubKey = pubKeyInput ? pubKeyInput.value.trim().replace(/^['"]|['"]$/g, '') : '';
+      let secKey = secKeyInput ? secKeyInput.value.trim().replace(/^['"]|['"]$/g, '') : '';
+      let key = secKey || pubKey;
+
+      // Check if user entered dashboard url
+      const dashMatch = url.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
+      if (dashMatch) {
+        url = 'https://' + dashMatch[1] + '.supabase.co';
+        urlInput.value = url;
+      }
+
+      if (!url || !key) {
+        showFormAlert('Missing URL or Keys', 'Please enter Project URL and at least one API Key (Publishable or Secret Key) to run live test.');
+        return;
+      }
+
+      // Normalization (handles http and https cleanly)
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+        urlInput.value = url;
+      }
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-indigo-950/40 border border-indigo-500/30 text-indigo-300";
+      box.innerHTML = `<div class="flex items-center gap-2"><span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full"></span> <span>Running live Read/Write handshake test on ${escapeHtml(url)}...</span></div>`;
+      box.classList.remove('hidden');
+
+      const start = Date.now();
+      try {
+        const res = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
+        const latency = Date.now() - start;
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'VERIFIED') {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+            box.innerHTML = `
+              <div class="flex items-center justify-between font-bold">
+                <span class="flex items-center gap-1.5">✅ API Keys Verified & Live!</span>
+                <span class="mono">${data.latencyMs || latency}ms</span>
+              </div>
+              <div class="text-[11px] text-slate-300 space-y-0.5">
+                <p>&bull; Gateway: <strong>${data.protocol || 'HTTPS'}</strong> &bull; Key Tested: <strong>${escapeHtml(data.keyType || (secKey ? 'Secret Admin Key' : 'Publishable Key'))}</strong></p>
+                <p>&bull; Handshake: <strong>Passed</strong> &bull; Ready to save!</p>
+              </div>
+            `;
+            showToast('✅ Credentials verified! Passed handshake test.');
+          } else if (data.status === 'AUTH_FAILED') {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-rose-950/40 border border-rose-500/40 text-rose-300";
+            box.innerHTML = `
+              <div class="font-bold flex items-center gap-1.5">❌ Authentication Failed (HTTP ${data.statusCode})</div>
+              <p class="text-[11px] text-slate-300">${escapeHtml(data.error || 'The provided API Key was rejected by this Supabase project.')}</p>
+            `;
+          } else {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-950/40 border border-amber-500/40 text-amber-300";
+            box.innerHTML = `
+              <div class="font-bold flex items-center gap-1.5">⚠️ Host Reachable (${data.statusCode || 'Responded'})</div>
+              <p class="text-[11px] text-slate-300">Server reached in ${latency}ms. Details: ${escapeHtml(data.error || 'Gateway acknowledged')}</p>
+            `;
+          }
+        } else {
+          const directRes = await fetch(`${url}/auth/v1/settings`, { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } });
+          const latency = Date.now() - start;
+          if (directRes.ok) {
+            box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+            box.innerHTML = `
+              <div class="font-bold flex items-center justify-between">
+                <span>✅ Handshake Succeeded (HTTP ${directRes.status})</span>
+                <span class="mono">${latency}ms</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Direct Supabase Auth connection verified. Key is active.</p>
+            `;
+          } else {
+            throw new Error(`Direct response HTTP ${directRes.status}`);
+          }
+        }
+      } catch (err) {
+        box.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-950/40 border border-amber-500/40 text-amber-300";
+        box.innerHTML = `
+          <div class="font-bold flex items-center gap-1.5">⚠️ Test Result</div>
+          <p class="text-[11px] text-slate-300">Connection test response: ${escapeHtml(err.message)}. If credentials are correct, you can still save to database.</p>
+        `;
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // ==================== SUBMIT NEW ACCOUNT ====================
+    async function submitNewAccount() {
+      const nameInput = document.getElementById('formName');
+      const urlInput = document.getElementById('formUrl');
+      const pubKeyInput = document.getElementById('formPublishableKey');
+      const secKeyInput = document.getElementById('formSecretKey');
+      const passInput = document.getElementById('formPass');
+      const tagInput = document.getElementById('formTag');
+      const connStrInput = document.getElementById('formConnString');
+
+      const name = nameInput.value.trim();
+      let project_url = urlInput.value.trim();
+      const publishable_key = pubKeyInput ? pubKeyInput.value.trim() : '';
+      const secret_key = secKeyInput ? secKeyInput.value.trim() : '';
+      const api_key = secret_key || publishable_key;
+      const db_password = passInput ? passInput.value.trim() : '';
+      const db_connection_string = connStrInput ? connStrInput.value.trim() : '';
+      const routing_tag = tagInput ? tagInput.value.trim() : '';
+
+      clearFormAlert();
+
+      // Validation
+      if (!name) {
+        showFormAlert('Missing Project Name', 'Please enter a name or alias for this account.');
+        nameInput.focus();
+        return;
+      }
+      if (!project_url) {
+        showFormAlert('Missing Project URL', 'Please enter your Supabase project URL (e.g. https://xyz.supabase.co).');
+        urlInput.focus();
+        return;
+      }
+      if (!publishable_key && !secret_key) {
+        showFormAlert('Missing Keys', 'Please enter at least a Publishable Key or a Secret Key / Service Role Key.');
+        if (pubKeyInput) pubKeyInput.focus();
+        return;
+      }
+
+      // Auto-prefix https if missing (normalizes both http and https)
+      if (!project_url.startsWith('http://') && !project_url.startsWith('https://')) {
+        project_url = 'https://' + project_url;
+        urlInput.value = project_url;
+      }
+
+      const btn = document.getElementById('saveAccountBtn');
+      const spinner = document.getElementById('saveBtnSpinner');
+      const btnText = document.getElementById('saveBtnText');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.innerText = "Smart Testing Credentials...";
+
+      // SMART PRE-TEST
+      try {
+        const testRes = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(project_url)}&key=${encodeURIComponent(api_key)}`);
+        if (testRes.ok) {
+          const testData = await testRes.json();
+          if (testData.status === 'AUTH_FAILED') {
+            showFormAlert('Invalid Supabase Keys', `The provided keys failed authentication with status HTTP ${testData.statusCode}. Please verify your keys.`);
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            btnText.innerText = "Test & Save to Database";
+            return;
+          }
+        }
+      } catch (pingErr) {
+        console.warn('Pre-save ping network notice:', pingErr);
+      }
+
+      btnText.innerText = "Saving to Master Supabase...";
+
+      const payload = {
+        name,
+        project_url,
+        publishable_key,
+        secret_key,
+        service_role_key: secret_key,
+        api_key,
+        db_password,
+        db_connection_string,
+        routing_tag
+      };
+
+      let saveSuccess = false;
+      let lastErrorMessage = '';
+      let savedAccountRecord = null;
+
+      // METHOD 1: Try Worker API (/api/accounts)
+      try {
+        const res = await fetch('/api/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          const resData = await res.json().catch(() => null);
+          if (resData) {
+            saveSuccess = true;
+            savedAccountRecord = Array.isArray(resData) ? resData[0] : resData;
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          lastErrorMessage = errData.error || errData.details || 'Server error ' + res.status;
+          console.warn('API save returned error:', lastErrorMessage);
+        }
+      } catch (apiErr) {
+        lastErrorMessage = apiErr.message;
+        console.warn('API call failed, attempting direct Supabase connection:', apiErr);
+      }
+
+      // METHOD 2: Direct Master Supabase REST Fallback if API was unavailable or errored
+      if (!saveSuccess) {
+        try {
+          const directRes = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts`, {
+            method: 'POST',
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (directRes.ok) {
+            const directData = await directRes.json().catch(() => null);
+            if (directData) {
+              saveSuccess = true;
+              savedAccountRecord = Array.isArray(directData) ? directData[0] : directData;
+            }
+          } else {
+            const fbErr = await directRes.json().catch(() => ({}));
+            lastErrorMessage = fbErr.message || fbErr.error || lastErrorMessage;
+          }
+        } catch (directErr) {
+          console.error('Direct fallback exception:', directErr);
+          lastErrorMessage = directErr.message;
+        }
+      }
+
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+      btnText.innerText = "Test & Save to Database";
+
+      if (saveSuccess) {
+        showToast('🎉 Account verified and saved to Master Supabase!', 'success');
+        nameInput.value = '';
+        urlInput.value = '';
+        if (pubKeyInput) pubKeyInput.value = '';
+        if (secKeyInput) secKeyInput.value = '';
+        if (passInput) passInput.value = '';
+        if (tagInput) tagInput.value = '';
+        if (connStrInput) connStrInput.value = '';
+        document.getElementById('rawPasteInput').value = '';
+        document.getElementById('inlineTestResult').classList.add('hidden');
+
+        // Insert saved account record directly into state and local storage so UI renders instantly
+        const itemToSave = savedAccountRecord || { id: 'acc_' + Date.now(), ...payload };
+        const existingIdx = state.accounts.findIndex(a => (itemToSave.id && String(a.id) === String(itemToSave.id)) || a.project_url === itemToSave.project_url);
+        if (existingIdx >= 0) {
+          state.accounts[existingIdx] = { ...state.accounts[existingIdx], ...itemToSave };
+        } else {
+          state.accounts.unshift(itemToSave);
+        }
+        try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
+
+        switchTab('accounts');
+        await fetchAccounts();
+      } else {
+        const isPermissionIssue = lastErrorMessage.toLowerCase().includes('permission') || 
+                                  lastErrorMessage.toLowerCase().includes('violates row-level') ||
+                                  lastErrorMessage.toLowerCase().includes('policy');
+
+        if (isPermissionIssue) {
+          showFormAlert(
+            'Supabase Permission Required (RLS)',
+            'Your table was created without public insert permissions. Run this 1-second query in your Supabase SQL Editor to enable unrestricted saving:',
+            `ALTER TABLE supabase_accounts DISABLE ROW LEVEL SECURITY;\nGRANT ALL ON TABLE supabase_accounts TO anon, authenticated, service_role;`
+          );
+        } else {
+          showFormAlert('Save Failed: ' + lastErrorMessage, 'Please verify your Supabase credentials or check your internet connection.');
+        }
+      }
+    }
+
+    function showFormAlert(title, message, sqlFix) {
+      const banner = document.getElementById('formAlertBanner');
+      const titleEl = document.getElementById('formAlertTitle');
+      const msgEl = document.getElementById('formAlertMsg');
+      const actionEl = document.getElementById('formAlertAction');
+
+      banner.className = "p-5 rounded-2xl text-xs flex items-start gap-3 bg-rose-500/10 border border-rose-500/30 text-rose-300";
+      document.getElementById('formAlertIcon').innerText = "⚠️";
+      titleEl.innerText = title;
+      msgEl.innerText = message;
+
+      if (sqlFix) {
+        actionEl.innerHTML = `
+          <div class="mt-3 p-3 bg-slate-950/90 border border-rose-500/40 rounded-xl overflow-x-auto">
+            <div class="flex items-center justify-between mb-1.5 text-[11px] font-semibold text-rose-300">
+              <span>SQL Fix (Run in Supabase SQL Editor):</span>
+              <button type="button" onclick="copyText('${escapeHtml(sqlFix)}', 'SQL copied!')" class="underline text-indigo-400 hover:text-white">Copy SQL</button>
+            </div>
+            <pre class="mono text-[11px] text-white">${escapeHtml(sqlFix)}</pre>
+          </div>
+        `;
+      } else {
+        actionEl.innerHTML = '';
+      }
+
+      banner.classList.remove('hidden');
+    }
+
+    function clearFormAlert() {
+      const banner = document.getElementById('formAlertBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    // ==================== LIVE API TEST SUITE FUNCTIONS ====================
+    function updateTesterDropdown() {
+      const sel = document.getElementById('testerAccountSelect');
+      if (!sel) return;
+      sel.innerHTML = `<option value="">-- Custom Manual Input --</option>` + 
+        state.accounts.map(acc => `<option value="${acc.id}">${escapeHtml(acc.name)} (${escapeHtml(acc.project_url)})</option>`).join('');
+    }
+
+    function loadSelectedAccountIntoTester() {
+      const sel = document.getElementById('testerAccountSelect');
+      const accountId = sel.value;
+      if (!accountId) return;
+      const acc = state.accounts.find(a => a.id === accountId);
+      if (acc) {
+        document.getElementById('testerUrl').value = acc.project_url;
+        document.getElementById('testerKey').value = acc.api_key;
+        showToast(`Loaded "${acc.name}" into test suite`);
+      }
+    }
+
+    function openAccountInDiagnostics(accountId) {
+      switchTab('tester');
+      const sel = document.getElementById('testerAccountSelect');
+      if (sel) {
+        sel.value = accountId;
+        loadSelectedAccountIntoTester();
+      }
+    }
+
+    function setTesterScope(scope) {
+      state.testerScope = scope;
+      const scopes = ['ping', 'read', 'full'];
+      scopes.forEach(s => {
+        const btn = document.getElementById(`scope-${s}`);
+        if (btn) {
+          btn.className = s === scope 
+            ? "px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold text-center"
+            : "px-3 py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold text-center";
+        }
+      });
+    }
+
+    function clearTesterConsole() {
+      document.getElementById('testerConsoleOutput').innerText = '// Console cleared.';
+    }
+
+    async function executeTesterDiagnostic() {
+      const urlInput = document.getElementById('testerUrl');
+      const keyInput = document.getElementById('testerKey');
+      const btn = document.getElementById('runDiagnosticBtn');
+      const btnText = document.getElementById('diagnosticBtnText');
+      const spinner = document.getElementById('diagnosticSpinner');
+      const consoleOut = document.getElementById('testerConsoleOutput');
+      const chip = document.getElementById('testerStatusChip');
+      const latencyMetric = document.getElementById('testerLatencyMetric');
+      const protocolMetric = document.getElementById('testerProtocolMetric');
+      const httpMetric = document.getElementById('testerHttpMetric');
+
+      let url = urlInput.value.trim();
+      const key = keyInput.value.trim();
+
+      if (!url || !key) {
+        showToast('⚠️ Please enter both URL and API Key to test!', 'warn');
+        return;
+      }
+
+      // Normalize protocol
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+        urlInput.value = url;
+      }
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.innerText = "Running Diagnostics...";
+      chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/40";
+      chip.innerText = "TESTING";
+
+      const log = (msg) => {
+        consoleOut.innerText += '\n' + msg;
+        consoleOut.scrollTop = consoleOut.scrollHeight;
+      };
+
+      consoleOut.innerText = `[${new Date().toLocaleTimeString()}] Starting Deep Diagnostics Test...`;
+      log(`[CONFIG] Target: ${url}`);
+      log(`[CONFIG] Key Prefix: ${key.slice(0, 10)}... (Length: ${key.length})`);
+      log(`[CONFIG] Protocol: ${url.startsWith('https://') ? 'HTTPS (Encrypted TLS)' : 'HTTP (Cleartext)'}`);
+      const currentScope = state.testerScope || 'full';
+      log(`[STEP 1/3] Initializing HTTP handshake and schema probe (Scope: ${currentScope.toUpperCase()})...`);
+
+      const tStart = Date.now();
+      try {
+        const res = await fetch(`/api/proxy?action=diagnose&scope=${currentScope}&url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
+        const elapsed = Date.now() - tStart;
+
+        if (res.ok) {
+          const data = await res.json();
+          latencyMetric.innerText = `${data.latencyMs || elapsed} ms`;
+          protocolMetric.innerText = data.protocol || (url.startsWith('https://') ? 'HTTPS' : 'HTTP');
+          httpMetric.innerText = `${data.statusCode} OK`;
+
+          log(`[STEP 2/3] Gateway response received in ${data.latencyMs || elapsed}ms via ${data.protocol}`);
+          if (data.readLatencyMs) {
+            log(`[READ PROBE] 📥 Schema read round-trip: ${data.readLatencyMs}ms - Status: HTTP ${data.statusCode}`);
+          }
+          if (data.writeLatencyMs !== undefined) {
+            log(`[WRITE PROBE] 📤 Gateway authorization & CORS preflight: ${data.writeLatencyMs}ms`);
+          }
+
+          if (data.status === 'VERIFIED') {
+            log(`[STEP 3/3] Authorization verified: Bearer & apikey headers validated by Supabase!`);
+            log(`[RESULT] ✅ PASSED: Send & Receive channels healthy. Ready for production reading and writing.`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/40";
+            chip.innerText = "VERIFIED (200 OK)";
+            showToast('✅ Diagnostic Passed: Endpoint is Healthy!', 'success');
+          } else if (data.status === 'AUTH_FAILED') {
+            log(`[STEP 3/3] ❌ Authentication Rejected: ${data.error}`);
+            log(`[HINT] Verify this API key in Supabase Project Settings -> API.`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/40";
+            chip.innerText = `AUTH FAILED (${data.statusCode})`;
+            showToast('❌ Auth Failed: Invalid API Key', 'error');
+          } else {
+            log(`[RESULT] Host status: ${data.status}. Notice: ${data.error || 'Connected'}`);
+            chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/40";
+            chip.innerText = `STATUS ${data.statusCode}`;
+          }
+        } else {
+          throw new Error('Proxy server error ' + res.status);
+        }
+      } catch (err) {
+        const elapsed = Date.now() - tStart;
+        log(`[ERROR] Diagnostic check failed: ${err.message}`);
+        chip.className = "px-2.5 py-0.5 text-[10px] font-semibold bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/40";
+        chip.innerText = "FAILED";
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        btnText.innerText = "Run Deep Diagnostic Test";
+      }
+    }
+
+    async function batchTestAllAccounts() {
+      if (state.accounts.length === 0) {
+        showToast('⚠️ No accounts to test. Connect an account first!', 'warn');
+        return;
+      }
+
+      const btn = document.getElementById('batchTestBtn');
+      const resultsCard = document.getElementById('batchResultsCard');
+      const container = document.getElementById('batchMatrixContainer');
+      const summary = document.getElementById('batchSummaryText');
+
+      btn.disabled = true;
+      btn.innerText = "Batch Testing in Parallel...";
+      resultsCard.classList.remove('hidden');
+      container.innerHTML = '<p class="text-xs text-slate-400 animate-pulse">Running parallel diagnostics across all connected Supabase accounts...</p>';
+
+      const start = Date.now();
+      try {
+        const res = await fetch('/api/proxy?action=ping');
+        const elapsed = Date.now() - start;
+
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.accounts || [];
+          summary.innerText = `Tested ${items.length} accounts in ${data.totalTimeMs || elapsed}ms`;
+
+          container.innerHTML = items.map(item => `
+            <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <div class="flex items-center gap-3">
+                <span class="w-2.5 h-2.5 rounded-full ${item.status === 'ALIVE' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}"></span>
+                <div>
+                  <h4 class="font-bold text-white">${escapeHtml(item.name)}</h4>
+                  <p class="text-[11px] text-slate-400 mono">${escapeHtml(item.url)}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="mono text-slate-300 font-semibold">${item.latencyMs}ms</span>
+                <span class="px-2 py-0.5 text-[10px] font-bold rounded-md ${item.status === 'ALIVE' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}">
+                  ${item.status} (${item.statusCode})
+                </span>
+              </div>
+            </div>
+          `).join('');
+
+          showToast(`✅ Batch test finished: ${items.length} accounts checked!`, 'success');
+        }
+      } catch (err) {
+        container.innerHTML = `<p class="text-xs text-rose-400">Batch test error: ${err.message}</p>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Batch Test All Accounts";
+      }
+    }
+
+    async function deleteAccount(id, encodedName, encodedUrl) {
+      const name = decodeURIComponent(encodedName || '');
+      const url = decodeURIComponent(encodedUrl || '');
+      if (!confirm(`Are you sure you want to permanently delete account '${name || id}'?\nThis will remove it from both this dashboard and the Master Supabase backend.`)) return;
+
+      // 1. Instant local removal so UI gives 0ms feedback
+      state.accounts = state.accounts.filter(a => a.id !== id && (name ? a.name !== name : true));
+      try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
+      renderAccountsList();
+      showToast('🗑️ Deleting account from master database...', 'info');
+
+      try {
+        // 1. Call /api/accounts DELETE
+        try {
+          await fetch(`/api/accounts?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}&url=${encodeURIComponent(url)}`, { method: 'DELETE' });
+        } catch (apiErr) {
+          console.warn('API accounts delete notice:', apiErr);
+        }
+
+        // 2. Call Direct Supabase REST DELETE by id
+        try {
+          await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?id=eq.${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+        } catch (dbErr) {
+          console.warn('Supabase REST delete notice:', dbErr);
+        }
+
+        // 3. Call Direct Supabase REST DELETE by project_url to ensure clean-up
+        if (url) {
+          try {
+            await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?project_url=eq.${encodeURIComponent(url)}`, {
+              method: 'DELETE',
+              headers: {
+                'apikey': MASTER_SUPABASE_KEY,
+                'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+              }
+            });
+          } catch (urlDelErr) {}
+        }
+
+        showToast(`🗑️ Account '${name || id}' permanently deleted!`, 'success');
+        await fetchAccounts();
+      } catch (err) {
+        showToast('Notice: ' + err.message, 'info');
+        await fetchAccounts();
+      }
+    }
+
+    async function toggleAccountStatus(id) {
+      const acc = state.accounts.find(a => a.id === id);
+      if (!acc) return;
+      const newStatus = acc.is_active === false ? true : false;
+      acc.is_active = newStatus;
+      renderAccountsList();
+      showToast(`Account '${acc.name}' ${newStatus ? 'activated' : 'deactivated'}!`, 'info');
+      try { localStorage.setItem('ott_cached_accounts', JSON.stringify(state.accounts)); } catch(e) {}
+
+      try {
+        await fetch(`/api/accounts?id=${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: newStatus })
+        });
+      } catch (e) {
+        try {
+          await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_accounts?id=eq.${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ is_active: newStatus })
+          });
+        } catch (err) {}
+      }
+    }
+
+    function copyAccountMasterKeyConfig(accId) {
+      const acc = state.accounts.find(a => a.id === accId);
+      if (!acc) return;
+      const masterKey = state.masterKeys[0]?.key || 'omni_live_master_default_2026';
+      const proxyUrl = window.location.origin + '/api/proxy';
+      const tag = acc.routing_tag || (acc.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
+
+      const text = `=====================================================
+🔑 ACCOUNT MASTER KEY & DIRECT ROUTING DETAILS
+=====================================================
+Account Name       : ${acc.name}
+Routing String Tag : #${tag}
+Status             : ${acc.is_active !== false ? 'ACTIVE' : 'DEACTIVATED'}
+Project URL        : ${acc.project_url}
+Master Router Key  : ${masterKey}
+
+-----------------------------------------------------
+🌐 PROXY ENDPOINT
+-----------------------------------------------------
+URL: ${proxyUrl}
+
+-----------------------------------------------------
+⚡ DIRECT ROUTED CURL (Zero multi-scan, direct DB access!)
+-----------------------------------------------------
+curl -X GET "${proxyUrl}/rest/v1/your_table" \\
+  -H "apikey: ${masterKey}" \\
+  -H "Authorization: Bearer ${masterKey}" \\
+  -H "x-project-name: ${acc.name}" \\
+  -H "x-account-tag: #${tag}"
+
+-----------------------------------------------------
+🚀 JAVASCRIPT FETCH INTEGRATION
+-----------------------------------------------------
+const response = await fetch("${proxyUrl}/rest/v1/your_table", {
+  method: "GET",
+  headers: {
+    "apikey": "${masterKey}",
+    "Authorization": "Bearer ${masterKey}",
+    "x-project-name": "${acc.name}",
+    "x-account-tag": "#${tag}",
+    "Content-Type": "application/json"
+  }
+});
+const data = await response.json();
+console.log(data);
+
+-----------------------------------------------------
+💡 DIRECT STRING VALUE BENEFIT:
+Passing 'x-account-tag: #${tag}' routes the request directly
+to '${acc.name}' without scanning any other accounts!
+=====================================================`;
+
+      copyText(text, `📋 Master Key config copied for '${acc.name}'!`);
+    }
+
+    // Direct Read & Write Modals
+    function openDirectReadModal(accId) {
+      const acc = state.accounts.find(a => a.id === accId);
+      if (!acc) return;
+      state.activeModalAccount = acc;
+      document.getElementById('directReadModalTitle').innerText = `Direct Read: ${acc.name}`;
+      document.getElementById('directReadTagBadge').innerText = `#${acc.routing_tag || acc.name.toLowerCase().replace(/\s+/g, '-')}`;
+      document.getElementById('directReadOutput').innerText = '// Enter endpoint path and click "Execute Direct Read"...';
+      document.getElementById('directReadLatency').innerText = '-- ms';
+      document.getElementById('directReadModal').classList.remove('hidden');
+    }
+
+    function closeDirectReadModal() {
+      document.getElementById('directReadModal').classList.add('hidden');
+    }
+
+    async function executeDirectRead() {
+      const acc = state.activeModalAccount;
+      if (!acc) return;
+      const subpath = (document.getElementById('directReadSubpath').value || '').trim().replace(/^\/+/, '');
+      const btn = document.getElementById('directReadBtn');
+      const out = document.getElementById('directReadOutput');
+      const lat = document.getElementById('directReadLatency');
+
+      btn.disabled = true;
+      out.innerText = '// Executing direct read without scanning other accounts...';
+
+      const start = Date.now();
+      try {
+        const targetUrl = `${acc.project_url.replace(/\/+$/, '')}/${subpath || 'rest/v1/'}`;
+        const res = await fetch(targetUrl, {
+          headers: {
+            'apikey': acc.api_key,
+            'Authorization': `Bearer ${acc.api_key}`,
+            'Accept': 'application/json'
+          }
+        });
+        const elapsed = Date.now() - start;
+        lat.innerText = `${elapsed} ms (HTTP ${res.status})`;
+        const json = await res.json().catch(() => ({ status: res.status, text: 'Non-JSON response' }));
+        out.innerText = JSON.stringify(json, null, 2);
+      } catch (err) {
+        lat.innerText = `${Date.now() - start} ms (ERR)`;
+        out.innerText = `// Direct Read Error:\n${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function openDirectWriteModal(accId) {
+      const acc = state.accounts.find(a => a.id === accId);
+      if (!acc) return;
+      state.activeModalAccount = acc;
+      document.getElementById('directWriteModalTitle').innerText = `Direct Write: ${acc.name}`;
+      document.getElementById('directWriteTagBadge').innerText = `#${acc.routing_tag || acc.name.toLowerCase().replace(/\s+/g, '-')}`;
+      document.getElementById('directWriteOutput').innerText = '// Set table and JSON record, then click "Execute Direct Write"...';
+      document.getElementById('directWriteLatency').innerText = '-- ms';
+      document.getElementById('directWriteModal').classList.remove('hidden');
+    }
+
+    function closeDirectWriteModal() {
+      document.getElementById('directWriteModal').classList.add('hidden');
+    }
+
+    async function executeDirectWrite() {
+      const acc = state.activeModalAccount;
+      if (!acc) return;
+      const table = (document.getElementById('directWriteTable').value || '').trim().replace(/^\/+/, '');
+      const recordRaw = document.getElementById('directWriteJson').value.trim();
+      const btn = document.getElementById('directWriteBtn');
+      const out = document.getElementById('directWriteOutput');
+      const lat = document.getElementById('directWriteLatency');
+
+      let parsedPayload = {};
+      try {
+        parsedPayload = JSON.parse(recordRaw);
+      } catch(e) {
+        alert('Invalid JSON in Record box: ' + e.message);
+        return;
+      }
+
+      btn.disabled = true;
+      out.innerText = '// Inserting record via Smart Proxy System...';
+
+      const start = Date.now();
+      try {
+        const proxyRes = await fetch('/api/proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-account-tag': acc.routing_tag || acc.name
+          },
+          body: JSON.stringify({
+            action: 'write',
+            table: table,
+            data: parsedPayload
+          })
+        });
+
+        const elapsed = Date.now() - start;
+        lat.innerText = `${elapsed} ms (HTTP ${proxyRes.status})`;
+        const json = await proxyRes.json().catch(() => ({ status: proxyRes.status }));
+
+        if (json.status === "TABLE_NOT_FOUND_AUTO_SQL_READY") {
+          out.innerText = `// ⚠️ TABLE '${table.toUpperCase()}' DOES NOT EXIST YET IN SUPABASE!\n// Smart system auto-generated the exact SQL schema required:\n\n${json.autoGeneratedSql}\n\n// Instructions: Copy the SQL above and run it in Supabase SQL Editor once to auto-create table & enable writes!`;
+          showToast(`⚠️ Table '${table}' missing. Smart SQL schema auto-generated!`, 'warn');
+        } else if (json.meta && json.meta.autoProvisioned) {
+          out.innerText = `// ✅ TABLE '${table}' AUTO-PROVISIONED & RECORD STORED!\n` + JSON.stringify(json, null, 2);
+          showToast(`🎉 Table '${table}' created & record stored!`, 'success');
+        } else {
+          out.innerText = JSON.stringify(json, null, 2);
+          showToast('Record write response received from ' + acc.name, proxyRes.ok ? 'success' : 'warn');
+        }
+      } catch (err) {
+        lat.innerText = `${Date.now() - start} ms (ERR)`;
+        out.innerText = `// Direct Write Error:\n${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ==================== TEST PING ====================
+    async function pingSingleAccount(url, key, targetElementId) {
+      const el = document.getElementById(targetElementId);
+      el.innerText = 'Pinging...';
+      el.className = 'text-[11px] text-amber-400 mono';
+
+      const start = Date.now();
+      try {
+        const cleanUrl = url.replace(/\/+$/, '');
+        const res = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(key)}`);
+        const latency = Date.now() - start;
+        if (res.ok) {
+          const data = await res.json();
+          el.innerText = `${data.latencyMs || latency}ms (${data.statusCode})`;
+          el.className = data.status === 'VERIFIED' ? 'text-[11px] text-emerald-400 mono font-semibold' : 'text-[11px] text-amber-400 mono';
+        } else {
+          el.innerText = `${latency}ms (ERR)`;
+          el.className = 'text-[11px] text-rose-400 mono';
+        }
+      } catch (err) {
+        const latency = Date.now() - start;
+        el.innerText = `${latency}ms (ERR)`;
+        el.className = 'text-[11px] text-rose-400 mono';
+      }
+    }
+
+    async function triggerKeepAlive() {
+      showToast('⚡ Running Keep-Alive ping on all projects...', 'info');
+      try {
+        const res = await fetch('/api/proxy?action=ping');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('metricLatency').innerText = Math.round(data.totalTimeMs / (data.total || 1));
+          showToast(`✅ Keep-Alive complete: ${data.total} accounts active (${data.totalTimeMs}ms)`, 'success');
+        } else {
+          showToast('Keep-Alive heartbeat pulse sent', 'success');
+        }
+      } catch (err) {
+        showToast('Keep-Alive pulse executed', 'info');
+      }
+    }
+
+    // ==================== MASTER KEYS ====================
+    function loadCachedMasterKeys() {
+      try {
+        const deletedKeys = JSON.parse(localStorage.getItem('ott_deleted_master_keys') || '[]');
+        const cached = localStorage.getItem('ott_master_keys');
+        if (cached) {
+          let parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            parsed = parsed.filter(k => {
+              const kVal = k.key || k.master_key;
+              return kVal && !deletedKeys.includes(kVal) && kVal !== 'omni_live_master_default_2026';
+            });
+            state.masterKeys = parsed;
+          }
+        }
+      } catch(e) {}
+    }
+
+    async function fetchMasterKeys() {
+      loadCachedMasterKeys();
+      const deletedKeys = (() => {
+        try { return JSON.parse(localStorage.getItem('ott_deleted_master_keys') || '[]'); } catch (e) { return []; }
+      })();
+
+      let keys = null;
+
+      // 1. Try API keys endpoint
+      try {
+        const res = await fetch('/api/keys');
+        if (res.ok) {
+          keys = await res.json();
+        }
+      } catch (err) {
+        console.warn('API /api/keys notice:', err);
+      }
+
+      // 2. Direct Supabase REST Fallback
+      if (!keys || !Array.isArray(keys) || keys.length === 0) {
+        try {
+          const directRes = await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?select=*`, {
+            headers: {
+              'apikey': MASTER_SUPABASE_KEY,
+              'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+            }
+          });
+          if (directRes.ok) {
+            const remoteData = await directRes.json();
+            if (Array.isArray(remoteData) && remoteData.length > 0) {
+              keys = remoteData;
+            }
+          }
+        } catch (fbErr) {
+          console.warn('Direct master keys fetch notice:', fbErr);
+        }
+      }
+
+      if (Array.isArray(keys)) {
+        // Filter out deleted keys and default key
+        const validRemoteKeys = keys.filter(k => {
+          const keyVal = k.key || k.master_key;
+          return keyVal && !deletedKeys.includes(keyVal) && keyVal !== 'omni_live_master_default_2026';
+        });
+
+        const map = new Map();
+        validRemoteKeys.forEach(k => {
+          const keyVal = k.key || k.master_key;
+          map.set(keyVal, {
+            ...k,
+            key: keyVal,
+            name: k.name || k.key_name || 'Master Router Key',
+            status: k.status || (k.is_active !== undefined ? (k.is_active ? 'ACTIVE' : 'REVOKED') : 'ACTIVE'),
+            destination: k.destination || 'All Accounts (Universal Router)',
+            connected_account_ids: k.connected_account_ids || k.assigned_account_ids || [],
+            connected_account_names: k.connected_account_names || [],
+            allowed_methods: k.allowed_methods || ["direct_postgres", "service_role", "anon"]
+          });
+        });
+
+        state.masterKeys.forEach(k => {
+          if (k.key && !deletedKeys.includes(k.key) && k.key !== 'omni_live_master_default_2026' && !map.has(k.key)) {
+            map.set(k.key, k);
+          }
+        });
+
+        state.masterKeys = Array.from(map.values());
+        saveMasterKeysCache();
+      }
+
+      renderMasterKeys();
+    }
+
+    function saveMasterKeysCache() {
+      try {
+        localStorage.setItem('ott_master_keys', JSON.stringify(state.masterKeys));
+      } catch(e) {}
+    }
+
+    function renderMasterKeys() {
+      const container = document.getElementById('keysContainer');
+      if (!container) return;
+
+      if (state.masterKeys.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 text-center bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+            <p class="text-sm text-slate-300 font-semibold">🔑 No Master API Keys created yet</p>
+            <p class="text-xs text-slate-500 mt-1">Click "Create Key" above to generate your first custom routing key.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = state.masterKeys.map((k, index) => {
+        const isActive = k.status !== 'REVOKED';
+        const destination = k.destination || 'All Accounts (Universal Router)';
+        const createdDate = k.created || '2026-10-22';
+
+        return `
+        <div class="bg-slate-900 border ${isActive ? 'border-slate-800 hover:border-slate-700/80' : 'border-amber-900/40 opacity-80'} rounded-3xl p-5 shadow-xl space-y-4 transition">
+          <!-- Top Row: Icon, Name, Status & Add Accounts Button -->
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl ${isActive ? 'bg-indigo-500/10 text-indigo-400' : 'bg-amber-500/10 text-amber-400'} flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-bold text-white text-base">${escapeHtml(k.name)}</h3>
+                  <span class="px-2.5 py-0.5 text-[10px] rounded-full font-bold flex items-center gap-1 ${isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}">
+                    <span class="w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+                    ${isActive ? 'ACTIVE' : 'REVOKED'}
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5">Created: ${createdDate} &bull; Limit: UNLIMITED</p>
+              </div>
+            </div>
+
+            <!-- Prominent Header [+] Add Accounts Button -->
+            <button 
+              onclick="openManageKeyAccountsModal(${index})"
+              class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-emerald-500 hover:from-indigo-600 hover:to-emerald-600 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-500/25 flex items-center gap-1.5 transition cursor-pointer"
+              title="Add more accounts to this key"
+            >
+              <span class="text-base font-black leading-none">+</span>
+              <span>Add Accounts</span>
+            </button>
+          </div>
+
+          <!-- Auto-Rotate Load Balancing Card -->
+          <div class="bg-indigo-950/40 border border-indigo-500/30 rounded-2xl p-3 flex items-center justify-between flex-wrap gap-2.5">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-black text-sm shrink-0 border border-indigo-500/30">
+                +
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-white">Target Accounts: ${k.connected_account_ids?.length || (state.accounts ? state.accounts.length : 1)} Connected</span>
+                  <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[10px] font-bold">Auto-Rotate Active</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">Writes auto-rotate across all connected accounts to prevent Supabase tier & rate limits.</p>
+              </div>
+            </div>
+            <button 
+              onclick="openManageKeyAccountsModal(${index})"
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-500/25 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span class="font-black text-base leading-none">+</span>
+              <span>Connect More Accounts</span>
+            </button>
+          </div>
+
+          <!-- Routing Destination Box -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between text-xs flex-wrap gap-2">
+            <span class="text-slate-400 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Routing Destination:
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-white font-semibold">${escapeHtml(destination)}</span>
+              <button 
+                onclick="openManageKeyAccountsModal(${index})"
+                class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] rounded-lg transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>+</span>
+                <span>Manage</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bearer Token Box -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between text-xs mono">
+            <div>
+              <span class="text-[10px] text-slate-500 block">Bearer Token:</span>
+              <span class="text-indigo-400 font-semibold">${k.key}</span>
+            </div>
+            <button onclick="copyText('${k.key}', 'Master Key token copied!')" class="text-slate-400 hover:text-white p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition cursor-pointer">
+              <svg class="w-4 h-4 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Copy Full Details & Endpoints Button -->
+          <button 
+            onclick="copyMasterKeyDetails('${k.key}', '${escapeHtml(k.name)}')"
+            class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+            </svg>
+            <span>Copy Full Details & Endpoints</span>
+          </button>
+
+          <!-- Action Row: Add Accounts, Direct Read/Write, Revoke, Delete -->
+          <div class="flex items-center justify-between gap-2 pt-1 flex-wrap">
+            <button 
+              onclick="openManageKeyAccountsModal(${index})"
+              class="flex-1 min-w-[130px] py-2 bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md shadow-indigo-500/20"
+            >
+              <span class="font-black text-sm leading-none">+</span>
+              <span>Add Accounts</span>
+            </button>
+            <button 
+              onclick="switchTab('query')"
+              class="flex-1 min-w-[130px] py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span>Direct Read/Write</span>
+            </button>
+            <button 
+              onclick="revokeMasterKey(${index})"
+              class="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              ${isActive ? 'Revoke' : 'Activate'}
+            </button>
+            <button 
+              onclick="deleteMasterKey(${index})"
+              class="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition cursor-pointer"
+              title="Delete Master Key"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        `;
+      }).join('');
+    }
+
+    function generateNewMasterKey() {
+      const nameInput = document.getElementById('newKeyNameInput');
+      if (nameInput) nameInput.value = "Mobile App Client " + (state.masterKeys.length + 1);
+
+      const container = document.getElementById('newKeyAccountsCheckboxes');
+      if (container) {
+        if (state.accounts.length === 0) {
+          container.innerHTML = `<label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" checked disabled class="rounded bg-slate-900 border-slate-700"> All Accounts (Universal Router - No accounts connected yet)</label>`;
+        } else {
+          container.innerHTML = `
+            <label class="flex items-center gap-2 text-xs text-white font-semibold pb-1 border-b border-slate-800 cursor-pointer">
+              <input type="checkbox" id="selectAllAccountsCheck" onchange="toggleSelectAllAccounts(this)" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600">
+              <span>⚡ All Accounts (Universal Router)</span>
+            </label>
+          ` + state.accounts.map(acc => `
+            <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" name="masterKeyAccountCheck" value="${escapeHtml(acc.name)}" data-url="${escapeHtml(acc.project_url)}" data-key="${escapeHtml(acc.api_key)}" checked class="rounded bg-slate-900 border-slate-700 text-indigo-600">
+              <span>${escapeHtml(acc.name)}</span>
+              <span class="mono text-[10px] text-slate-500">(#${escapeHtml(acc.routing_tag || acc.name.toLowerCase().replace(/\s+/g, '-'))})</span>
+            </label>
+          `).join('');
+        }
+      }
+
+      document.getElementById('keyTestStatusBox').classList.add('hidden');
+      document.getElementById('masterKeyModal').classList.remove('hidden');
+    }
+
+    function closeMasterKeyModal() {
+      document.getElementById('masterKeyModal').classList.add('hidden');
+    }
+
+    function toggleSelectAllAccounts(masterCheck) {
+      const checks = document.querySelectorAll('input[name="masterKeyAccountCheck"]');
+      checks.forEach(c => c.checked = masterCheck.checked);
+    }
+
+    async function preTestAndGenerateMasterKey() {
+      const name = (document.getElementById('newKeyNameInput').value || '').trim();
+      if (!name) {
+        showToast('⚠️ Please enter a key label!', 'warn');
+        return;
+      }
+
+      const statusBox = document.getElementById('keyTestStatusBox');
+      const statusText = document.getElementById('keyTestStatusText');
+      const submitBtn = document.getElementById('generateKeySubmitBtn');
+
+      statusBox.className = "p-3 rounded-xl text-xs bg-indigo-950/40 border border-indigo-500/30 text-indigo-300";
+      statusBox.classList.remove('hidden');
+      statusText.innerText = "Running smart pre-test read/write handshake across selected accounts...";
+      submitBtn.disabled = true;
+
+      const checks = document.querySelectorAll('input[name="masterKeyAccountCheck"]:checked');
+      const selectedAccounts = Array.from(checks).map(c => ({
+        name: c.value,
+        url: c.getAttribute('data-url'),
+        key: c.getAttribute('data-key')
+      }));
+
+      let testPassed = true;
+      let testMessage = '';
+
+      if (selectedAccounts.length > 0) {
+        try {
+          const sample = selectedAccounts[0];
+          const testRes = await fetch(`/api/proxy?action=diagnose&url=${encodeURIComponent(sample.url)}&key=${encodeURIComponent(sample.key)}`);
+          if (testRes.ok) {
+            const data = await testRes.json();
+            if (data.status === 'AUTH_FAILED') {
+              testPassed = false;
+              testMessage = `Pre-test auth failed for '${sample.name}': ${data.error}`;
+            }
+          }
+        } catch (err) {
+          console.warn('Pre-test network warning:', err);
+        }
+      }
+
+      if (!testPassed) {
+        statusBox.className = "p-3 rounded-xl text-xs bg-rose-950/40 border border-rose-500/40 text-rose-300";
+        statusText.innerText = testMessage;
+        submitBtn.disabled = false;
+        return;
+      }
+
+      statusBox.className = "p-3 rounded-xl text-xs bg-emerald-950/40 border border-emerald-500/40 text-emerald-300";
+      statusText.innerText = "✅ Pre-test handshake passed successfully! Generating key...";
+
+      await new Promise(r => setTimeout(r, 600));
+
+      const randomPart = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const newKey = `omni_live_${randomPart}`;
+
+      let destinationSummary = 'All Accounts (Universal Router)';
+      const allCheck = document.getElementById('selectAllAccountsCheck');
+      if (allCheck && allCheck.checked) {
+        destinationSummary = `All Accounts (${state.accounts.length} connected)`;
+      } else if (selectedAccounts.length > 0) {
+        destinationSummary = selectedAccounts.map(a => a.name).join(', ');
+      }
+
+      const keyPayload = {
+        key: newKey,
+        name: name,
+        created: new Date().toISOString().split('T')[0],
+        status: 'ACTIVE',
+        destination: destinationSummary,
+        connected_account_ids: selectedAccounts.map(a => a.name),
+        connected_account_names: selectedAccounts.map(a => a.name)
+      };
+
+      state.masterKeys.unshift(keyPayload);
+
+      saveMasterKeysCache();
+      renderMasterKeys();
+      closeMasterKeyModal();
+      submitBtn.disabled = false;
+      showToast('🔑 Master Key pre-tested and generated successfully!', 'success');
+
+      // Cloud Persistence
+      try {
+        await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(keyPayload)
+        });
+      } catch (err) {}
+
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys`, {
+          method: 'POST',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(keyPayload)
+        });
+      } catch (err) {}
+    }
+
+    // ==================== MANAGE KEY ACCOUNTS (ADD/REMOVE) ====================
+    let currentEditingKeyIndex = null;
+
+    function openManageKeyAccountsModal(index) {
+      currentEditingKeyIndex = index;
+      const k = state.masterKeys[index];
+      if (!k) return;
+
+      const titleEl = document.getElementById('manageKeyModalTitle');
+      const nameBadge = document.getElementById('manageKeyNameBadge');
+      const tokenBadge = document.getElementById('manageKeyTokenBadge');
+      const container = document.getElementById('manageKeyAccountsCheckboxes');
+
+      if (titleEl) titleEl.textContent = `Manage Accounts: ${k.name}`;
+      if (nameBadge) nameBadge.textContent = k.name;
+      if (tokenBadge) tokenBadge.textContent = k.key;
+
+      let currentIds = (k.connected_account_ids || []).map(String);
+      if (typeof currentIds === 'string') {
+        try { currentIds = JSON.parse(currentIds); } catch (e) { currentIds = []; }
+      }
+      const isUniversal = !k.destination || k.destination.toLowerCase().includes('all') || currentIds.length === 0;
+
+      if (container) {
+        if (!state.accounts || state.accounts.length === 0) {
+          container.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center">No Supabase accounts connected yet in the dashboard.</p>`;
+        } else {
+          container.innerHTML = state.accounts.map(acc => {
+            const isChecked = isUniversal || currentIds.includes(String(acc.id)) || currentIds.includes(acc.name);
+            const tag = acc.routing_tag || `#${(acc.name || '').toLowerCase().replace(/\s+/g, '-')}`;
+            return `
+              <label class="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 cursor-pointer transition">
+                <div class="flex items-center gap-2.5">
+                  <input type="checkbox" name="manageKeyAccountCheckbox" value="${escapeHtml(String(acc.id))}" data-name="${escapeHtml(acc.name)}" ${isChecked ? 'checked' : ''} class="w-4 h-4 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-indigo-500">
+                  <div>
+                    <span class="text-xs font-semibold text-white block">${escapeHtml(acc.name)}</span>
+                    <span class="mono text-[10px] text-slate-500">${escapeHtml(acc.project_url || '')}</span>
+                  </div>
+                </div>
+                <span class="mono text-[11px] text-indigo-400 font-semibold px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">${escapeHtml(tag)}</span>
+              </label>
+            `;
+          }).join('');
+        }
+      }
+
+      const modal = document.getElementById('manageKeyAccountsModal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeManageKeyAccountsModal() {
+      const modal = document.getElementById('manageKeyAccountsModal');
+      if (modal) modal.classList.add('hidden');
+      currentEditingKeyIndex = null;
+    }
+
+    function toggleAllManageAccounts(checked) {
+      const checkboxes = document.querySelectorAll('input[name="manageKeyAccountCheckbox"]');
+      checkboxes.forEach(cb => cb.checked = checked);
+    }
+
+    async function saveKeyAccountsModal() {
+      if (currentEditingKeyIndex === null || !state.masterKeys[currentEditingKeyIndex]) {
+        closeManageKeyAccountsModal();
+        return;
+      }
+
+      const k = state.masterKeys[currentEditingKeyIndex];
+      const checkboxes = document.querySelectorAll('input[name="manageKeyAccountCheckbox"]:checked');
+      const selectedAccountIds = Array.from(checkboxes).map(cb => cb.value);
+      const selectedAccountNames = Array.from(checkboxes).map(cb => cb.getAttribute('data-name'));
+
+      const isAll = selectedAccountIds.length === (state.accounts ? state.accounts.length : 0) || selectedAccountIds.length === 0;
+      const newDestination = isAll ? 'All Accounts (Universal Router)' : `${selectedAccountIds.length} Accounts Scoped`;
+
+      const saveBtn = document.getElementById('saveKeyAccountsBtn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span>Saving...</span>`;
+      }
+
+      // Update local key object
+      k.connected_account_ids = selectedAccountIds;
+      k.connected_account_names = selectedAccountNames;
+      k.destination = newDestination;
+      saveMasterKeysCache();
+      renderMasterKeys();
+
+      // Send update to proxy API /api/keys
+      try {
+        await fetch(`/api/keys?key=${encodeURIComponent(k.key)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connected_account_ids: selectedAccountIds,
+            connected_account_names: selectedAccountNames,
+            destination: newDestination
+          })
+        });
+      } catch (e) {}
+
+      // Call /api/control update_key_accounts
+      try {
+        await fetch('/api/control', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${k.key}`
+          },
+          body: JSON.stringify({
+            action: 'update_key_accounts',
+            key: k.key,
+            connected_account_ids: selectedAccountIds
+          })
+        });
+      } catch (e) {}
+
+      // Update master Supabase directly
+      try {
+        const updatePayload = {
+          connected_account_ids: JSON.stringify(selectedAccountIds),
+          assigned_account_ids: JSON.stringify(selectedAccountIds),
+          destination: newDestination
+        };
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?or=(master_key.eq.${encodeURIComponent(k.key)},key.eq.${encodeURIComponent(k.key)})`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updatePayload)
+        });
+      } catch (e) {}
+
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<span>Save Accounts to Key</span>`;
+      }
+
+      closeManageKeyAccountsModal();
+      showToast(`✅ Successfully updated connected accounts for '${k.name}'!`, 'success');
+    }
+
+    async function deleteMasterKey(index) {
+      const k = state.masterKeys[index];
+      if (!k) return;
+      if (!confirm(`Permanently delete master key '${k.name}'?`)) return;
+
+      const targetKey = k.key;
+      state.masterKeys.splice(index, 1);
+
+      // Track deleted keys in localStorage so they never resurrect
+      try {
+        const deletedKeys = JSON.parse(localStorage.getItem('ott_deleted_master_keys') || '[]');
+        if (!deletedKeys.includes(targetKey)) {
+          deletedKeys.push(targetKey);
+          localStorage.setItem('ott_deleted_master_keys', JSON.stringify(deletedKeys));
+        }
+      } catch (e) {}
+
+      saveMasterKeysCache();
+      renderMasterKeys();
+
+      // Delete via API
+      try {
+        await fetch(`/api/keys?key=${encodeURIComponent(targetKey)}`, { method: 'DELETE' });
+      } catch (e) {}
+
+      // Delete via Direct REST by master_key
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?master_key=eq.${encodeURIComponent(targetKey)}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+          }
+        });
+      } catch (e) {}
+
+      // Delete via Direct REST by key
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?key=eq.${encodeURIComponent(targetKey)}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`
+          }
+        });
+      } catch (e) {}
+
+      showToast('🗑️ Master Key deleted permanently!', 'success');
+    }
+
+    async function revokeMasterKey(index) {
+      const k = state.masterKeys[index];
+      if (!k) return;
+      k.status = k.status === 'REVOKED' ? 'ACTIVE' : 'REVOKED';
+      saveMasterKeysCache();
+      renderMasterKeys();
+
+      try {
+        await fetch(`/api/keys?key=${encodeURIComponent(k.key)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: k.status })
+        });
+      } catch (e) {}
+
+      try {
+        await fetch(`${MASTER_SUPABASE_URL}/rest/v1/supabase_master_keys?key=eq.${encodeURIComponent(k.key)}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': MASTER_SUPABASE_KEY,
+            'Authorization': `Bearer ${MASTER_SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: k.status })
+        });
+      } catch (e) {}
+
+      showToast(`Master Key '${k.name}' status changed to ${k.status}`, 'info');
+    }
+
+    function copyMasterKeyDetails(key, name) {
+      const proxyUrl = window.location.origin + '/api/proxy';
+      const text = `=====================================================
+🔑 MASTER API KEY & ENDPOINT DETAILS
+=====================================================
+Key Name      : ${name}
+Bearer Token  : ${key}
+Proxy Endpoint: ${proxyUrl}
+
+-----------------------------------------------------
+cURL INTEGRATION EXAMPLE
+-----------------------------------------------------
+curl -X POST "${proxyUrl}" \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "x-project-name: all" \\
+  -H "Content-Type: application/json" \\
+  -d '{"action": "query", "path": "users"}'
+=====================================================`;
+      copyText(text, `📋 Full details & endpoints copied for '${name}'!`);
+    }
+
+    // ==================== PLAYGROUND & QUERY ====================
+    function updateQueryDropdown() {
+      const sel = document.getElementById('queryTargetSelect');
+      if (!sel) return;
+      sel.innerHTML = `<option value="all">⚡ ALL Accounts Merged (Parallel Search)</option>` + 
+        state.accounts.map(acc => `<option value="${escapeHtml(acc.name)}">${escapeHtml(acc.name)} (${escapeHtml(acc.project_url)})</option>`).join('');
+    }
+
+    function loadSqlPreset(type) {
+      const textarea = document.getElementById('queryPayloadJson');
+      if (!textarea) return;
+      if (type === 'create_table') {
+        textarea.value = JSON.stringify({
+          action: "create_table",
+          table: "app_settings",
+          columns: [
+            { name: "setting_key", type: "text" },
+            { name: "setting_value", type: "text" },
+            { name: "is_enabled", type: "boolean" }
+          ]
+        }, null, 2);
+      } else if (type === 'alter_table') {
+        textarea.value = JSON.stringify({
+          action: "alter_table",
+          table: "app_settings",
+          addColumn: { name: "category", type: "text" }
+        }, null, 2);
+      } else if (type === 'drop_table') {
+        textarea.value = JSON.stringify({
+          action: "drop_table",
+          table: "app_settings"
+        }, null, 2);
+      } else if (type === 'insert') {
+        textarea.value = JSON.stringify({
+          action: "insert",
+          table: "app_settings",
+          data: {
+            setting_key: "theme_color",
+            setting_value: "#6366f1",
+            is_enabled: true
+          }
+        }, null, 2);
+      } else if (type === 'update') {
+        textarea.value = JSON.stringify({
+          action: "update",
+          table: "app_settings",
+          match: { setting_key: "theme_color" },
+          data: { setting_value: "#10b981" }
+        }, null, 2);
+      } else if (type === 'delete') {
+        textarea.value = JSON.stringify({
+          action: "delete",
+          table: "app_settings",
+          match: { setting_key: "theme_color" }
+        }, null, 2);
+      } else if (type === 'sql') {
+        textarea.value = JSON.stringify({
+          action: "sql",
+          query: "CREATE TABLE IF NOT EXISTS public.user_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event text, created_at timestamptz DEFAULT now()); ALTER TABLE public.user_logs DISABLE ROW LEVEL SECURITY; GRANT ALL ON TABLE public.user_logs TO anon, authenticated, service_role;"
+        }, null, 2);
+      } else if (type === 'control_list') {
+        textarea.value = JSON.stringify({
+          action: "list_accounts",
+          target: "all"
+        }, null, 2);
+      } else if (type === 'control_toggle') {
+        textarea.value = JSON.stringify({
+          action: "enable_account",
+          target: "all"
+        }, null, 2);
+      }
+      showToast(`Loaded ${type.toUpperCase()} preset template!`, 'info');
+    }
+
+    async function runPlaygroundQuery() {
+      const target = document.getElementById('queryTargetSelect').value;
+      const payloadRaw = document.getElementById('queryPayloadJson').value.trim();
+      const output = document.getElementById('queryResultOutput');
+      const latencyBadge = document.getElementById('queryLatencyBadge');
+      const btn = document.getElementById('runQueryBtn');
+
+      btn.disabled = true;
+      output.innerText = '// Executing master action across target account(s)...';
+
+      const masterKey = state.masterKeys.find(k => k.status === 'ACTIVE')?.key || 'omni_live_master_default_2026';
+      const startTime = Date.now();
+
+      try {
+        let headers = {
+          'Authorization': `Bearer ${masterKey}`,
+          'Content-Type': 'application/json'
+        };
+        if (target && target.toLowerCase() !== 'all') {
+          headers['x-project-name'] = target;
+          headers['x-account-tag'] = target;
+        } else {
+          headers['x-project-name'] = 'all';
+        }
+
+        let fetchOpts = {
+          method: 'POST',
+          headers: headers
+        };
+
+        if (payloadRaw.startsWith('{') || payloadRaw.startsWith('[')) {
+          fetchOpts.body = payloadRaw;
+        } else {
+          fetchOpts.body = JSON.stringify({ action: 'query', path: payloadRaw });
+        }
+
+        const isControlAction = payloadRaw.includes('list_accounts') || payloadRaw.includes('enable_account') || payloadRaw.includes('disable_account') || (payloadRaw.includes('delete_account') && !payloadRaw.includes('drop_table'));
+        const targetEndpoint = isControlAction ? '/api/control' : '/api/proxy';
+
+        const res = await fetch(targetEndpoint, fetchOpts);
+        const elapsed = Date.now() - startTime;
+        latencyBadge.innerText = `${elapsed} ms (HTTP ${res.status})`;
+
+        const json = await res.json().catch(() => ({ status: res.status, text: 'Non-JSON' }));
+        output.innerText = JSON.stringify(json, null, 2);
+        showToast('Execution finished in ' + elapsed + 'ms', res.ok ? 'success' : 'warn');
+      } catch (err) {
+        output.innerText = '// Execution Error:\n' + err.message;
+        showToast('Error: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ==================== UTILS ====================
+    function maskKey(k) {
+      if (!k) return 'None';
+      if (k.length <= 12) return '••••••';
+      return k.slice(0, 8) + '••••••••' + k.slice(-4);
+    }
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function copyProxyUrl() {
+      const url = window.location.origin + '/api/proxy';
+      copyText(url, 'Proxy URL copied: ' + url);
+    }
+
+    function copySnippet(id) {
+      const text = document.getElementById(id).innerText;
+      copyText(text, 'Code snippet copied!');
+    }
+
+    function copyText(txt, msg) {
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast(msg || 'Copied to clipboard', 'success');
+      }).catch(() => {
+        showToast('Copied: ' + txt, 'success');
+      });
+    }
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      const box = document.getElementById('toastBox');
+      const icon = document.getElementById('toastIcon');
+      const msgEl = document.getElementById('toastMsg');
+
+      msgEl.innerText = msg;
+      if (type === 'error') {
+        icon.innerText = '❌';
+        box.className = 'bg-rose-950 border border-rose-500/80 shadow-2xl rounded-2xl px-5 py-4 flex items-center gap-3 text-sm text-white';
+      } else if (type === 'warn') {
+        icon.innerText = '⚠️';
+        box.className = 'bg-amber-950 border border-amber-500/80 shadow-2xl rounded-2xl px-5 py-4 flex items-center gap-3 text-sm text-white';
+      } else if (type === 'info') {
+        icon.innerText = '⚡';
+        box.className = 'bg-slate-900 border border-indigo-500/80 shadow-2xl rounded-2xl px-5 py-4 flex items-center gap-3 text-sm text-white';
+      } else {
+        icon.innerText = '✅';
+        box.className = 'bg-slate-900 border border-emerald-500/80 shadow-2xl rounded-2xl px-5 py-4 flex items-center gap-3 text-sm text-white';
+      }
+
+      toast.classList.remove('-translate-y-24', 'opacity-0');
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => {
+        toast.classList.add('-translate-y-24', 'opacity-0');
+      }, 4000);
+    }
+
+    // Auto-check authentication on load
+    window.addEventListener('DOMContentLoaded', checkAuth);
+  </script>
+</body>
+</html>
